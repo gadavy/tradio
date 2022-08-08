@@ -17,25 +17,16 @@ use components::devices::Devices;
 use components::library::Library;
 
 use crate::app;
-use crate::player::Player;
 
 mod components;
 
-// TODO:
-//  1. окно поиска музыки через клиент (возможно стоит переделать на trait но там асинхронщина)
-//  2. окно библиотеки - sql or json? можно заюзать трейт
-//      2.1. добавление из поиска
-//      2.2. добавление руками
-//      2.3. удаление
-//      2.4. редактирование
-//  3. окно девайсов, что бы можно было менять
 pub enum ActiveBlock {
     Library,
     Devices,
 }
 
-pub struct Ui<P: Player> {
-    app: app::App<P>,
+pub struct Ui {
+    app: app::App,
     closed: bool,
 
     active: ActiveBlock,
@@ -43,8 +34,8 @@ pub struct Ui<P: Player> {
     devices: Devices,
 }
 
-impl<P: Player> Ui<P> {
-    pub fn new(app: app::App<P>) -> Self {
+impl Ui {
+    pub fn new(app: app::App) -> Self {
         let library = Library::new();
         let devices = Devices::new();
 
@@ -112,8 +103,6 @@ impl<P: Player> Ui<P> {
             .constraints(constraints)
             .split(f.size());
 
-        // todo: f.size().height = кол-во строк которые необходимо загрузить
-
         match self.active {
             ActiveBlock::Library => self.library.render(f, layout[0]),
             ActiveBlock::Devices => self.devices.render(f, layout[0]),
@@ -131,7 +120,7 @@ impl<P: Player> Ui<P> {
                 } else {
                     "Playing"
                 },
-                self.app.current_device(),
+                self.app.current_device_name(),
                 self.app.volume()
             );
 
@@ -169,8 +158,8 @@ impl<P: Player> Ui<P> {
         }
 
         match self.active {
-            ActiveBlock::Library => self.library.handle_event(event, &self.app).await,
-            ActiveBlock::Devices => self.devices.handle_event(event, &mut self.app).await,
+            ActiveBlock::Library => self.library.handle_event(event, &mut self.app).await,
+            ActiveBlock::Devices => self.devices.handle_event(event, &self.app).await,
         }
     }
 }
@@ -181,7 +170,7 @@ fn setup_terminal() -> anyhow::Result<()> {
     enable_raw_mode().context("enable raw mod")?;
 
     std::panic::set_hook(Box::new(|info| {
-        shutdown_terminal().unwrap(); // todo: expect.
+        shutdown_terminal().expect("can't graceful shutdown terminal");
         eprintln!("{:?}", info);
     }));
 

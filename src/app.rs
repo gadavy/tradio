@@ -1,49 +1,36 @@
 use crate::api::Client;
 use crate::models::Station;
 use crate::player::{Device, Player};
-use std::sync::Mutex;
 
-#[derive(Default)]
-pub struct State {
-    device: Option<String>,
-    playing: Option<Station>,
+pub struct App {
+    pub player: Box<dyn Player>,
+    pub client: Client,
+
+    pub active_device: Option<Device>,
+    pub playing_station: Option<Station>,
 }
 
-pub struct App<P: Player> {
-    player: P,
-    client: Client,
+impl App {
+    pub fn new<P: Player + 'static>(player: P, client: Client) -> anyhow::Result<Self> {
+        let active_device = player.devices()?.into_iter().find(|d| d.is_active());
 
-    state: Mutex<State>,
-}
-
-impl<P: Player> App<P> {
-    pub fn new(player: P, client: Client) -> Self {
-        let state = State {
-            device: player
-                .devices()
-                .unwrap() // todo: expect or error.
-                .iter()
-                .find(|d| d.is_active())
-                .map(|d| d.id().to_string()),
-            playing: None,
-        };
-
-        Self {
-            player,
+        Ok(Self {
+            player: Box::new(player),
             client,
-            state: Mutex::new(state),
-        }
+            active_device,
+            playing_station: None,
+        })
     }
 
-    pub async fn play_track(&self, station: &Station) -> anyhow::Result<()> {
+    pub fn play(&mut self, station: Station) -> anyhow::Result<()> {
         self.player.play(&station.url)?;
-        self.state.lock().unwrap().playing = Some(station.clone());
+        self.playing_station = Some(station);
 
         Ok(())
     }
 
-    pub fn playing(&self) -> Option<Station> {
-        self.state.lock().unwrap().playing.as_ref().cloned()
+    pub fn playing(&self) -> Option<&Station> {
+        self.playing_station.as_ref()
     }
 
     pub fn is_paused(&self) -> bool {
@@ -54,14 +41,13 @@ impl<P: Player> App<P> {
         self.player.pause();
     }
 
-    pub fn play(&self) {
+    pub fn resume(&self) {
         self.player.resume();
     }
 
-    pub fn stop(&self) {
+    pub fn stop(&mut self) {
         self.player.stop();
-        self.player.wait_end();
-        self.state.lock().unwrap().playing = None;
+        self.playing_station = None
     }
 
     pub fn volume(&self) -> i8 {
@@ -76,30 +62,16 @@ impl<P: Player> App<P> {
         self.player.set_volume(self.player.volume() - 5);
     }
 
+    pub fn current_device_name(&self) -> String {
+        self.active_device.as_ref().map(|d| d.id()).unwrap_or("NONE").to_string()
+    }
+
     pub fn devices(&self) -> anyhow::Result<Vec<Device>> {
         self.player.devices()
     }
 
-    pub fn current_device(&self) -> String {
-        self.state
-            .lock()
-            .unwrap()
-            .device
-            .clone()
-            .unwrap_or_default()
-    }
-
     pub async fn use_device(&self, device: &Device) -> anyhow::Result<()> {
         self.player.use_device(device)?;
-        self.state.lock().unwrap().device = Some(device.id().to_string());
-
-        let playing = self.state.lock().unwrap().playing.clone();
-
-        // Resume playing current station if exists.
-        // TODO: maybe init reader before changing device?
-        if let Some(ref station) = playing {
-            self.player.play(&station.url)?;
-        }
 
         Ok(())
     }

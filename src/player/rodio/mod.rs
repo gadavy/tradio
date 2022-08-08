@@ -1,15 +1,14 @@
-use std::fmt::Formatter;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
 use std::{fmt, time::Duration};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering}, Mutex,
+};
 
 use anyhow::Context;
+use rodio::{cpal, DeviceTrait, OutputStream, Sink, Source};
 use rodio::cpal::traits::HostTrait;
 use rodio::queue::SourcesQueueOutput;
 use rodio::source::Stoppable;
-use rodio::{cpal, DeviceTrait, OutputStream, Sink, Source};
 
 use super::{Device, Player};
 
@@ -27,7 +26,7 @@ struct ActiveOutput {
 }
 
 impl fmt::Debug for ActiveOutput {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ActiveOutput")
             .field("with_device", &self.device.is_some())
             .field("with_stream", &self.stream.is_some())
@@ -62,7 +61,7 @@ impl RodioPlayer {
         let player = Self::new_idle();
 
         if let Some(device) = player.devices()?.into_iter().find(|d| d.is_default) {
-            player.use_device(&device)?
+            player.use_device(&device)?;
         }
 
         Ok(player)
@@ -184,7 +183,7 @@ impl Player for RodioPlayer {
 }
 
 impl fmt::Debug for RodioPlayer {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RodioPlayer")
             .field("controls", &self.controls)
             .field("active_out", &self.active_out)

@@ -2,7 +2,7 @@ use crossterm::event::{Event, KeyCode};
 use tui::widgets::TableState;
 
 use crate::app;
-use crate::player::{Device, Player};
+use crate::player::Device;
 
 pub struct Devices {
     list: Vec<Device>,
@@ -19,7 +19,7 @@ impl Devices {
 
     pub fn set_list(&mut self, list: Vec<Device>) {
         self.selected
-            .select(list.iter().position(|d| d.is_default()));
+            .select(list.iter().position(Device::is_default));
         self.list = list;
     }
 
@@ -51,10 +51,10 @@ impl Devices {
         }
     }
 
-    pub async fn handle_event<P: Player>(
+    pub async fn handle_event(
         &mut self,
         event: Event,
-        app: &mut app::App<P>,
+        app: &app::App,
     ) -> anyhow::Result<()> {
         if let Event::Key(key) = event {
             match key.code {
@@ -94,7 +94,7 @@ mod rendering {
                 .map(|(i, d)| {
                     let mut text = (i + 1).to_string();
                     text.push(' ');
-                    text.push_str(&d.id());
+                    text.push_str(d.id());
 
                     if d.is_active() {
                         text.push_str(" (active)");

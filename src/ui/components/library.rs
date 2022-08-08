@@ -1,6 +1,5 @@
 use crate::app;
 use crate::models::Station;
-use crate::player::Player;
 use crossterm::event::{Event, KeyCode};
 use tui::widgets::TableState;
 
@@ -46,19 +45,19 @@ impl Library {
         &self.list[self.selected.selected().unwrap_or(0)]
     }
 
-    pub async fn handle_event<P: Player>(
+    pub async fn handle_event(
         &mut self,
         event: Event,
-        app: &app::App<P>,
+        app: &mut app::App,
     ) -> anyhow::Result<()> {
         if let Event::Key(key) = event {
             match key.code {
                 KeyCode::Up => self.up(),
                 KeyCode::Down => self.down(),
-                KeyCode::Enter => app.play_track(self.selected()).await?,
+                KeyCode::Enter => app.play(self.selected().clone())?,
                 KeyCode::Char('p') => {
                     if app.is_paused() {
-                        app.play();
+                        app.resume();
                     } else {
                         app.pause();
                     }
