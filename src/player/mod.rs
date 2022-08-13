@@ -1,4 +1,4 @@
-pub use self::rodio::RodioPlayer;
+pub use self::rodio::Rodio;
 
 mod rodio;
 
@@ -33,6 +33,9 @@ pub trait Player {
 
     /// Starts using the given output device for playing tracks.
     fn use_device(&self, device: &Device) -> anyhow::Result<()>;
+
+    /// Return active device if exists.
+    fn active_device(&self) -> Option<Device>;
 }
 
 #[derive(Debug, Clone)]

@@ -144,12 +144,28 @@ impl Ui {
             match key.code {
                 KeyCode::Char('q') => self.closed = true,
                 KeyCode::F(1) => {
+                    let stations = match self.app.load_stations().await {
+                        Ok(stations) => stations,
+                        Err(e) => {
+                            log::error!("load stations list failed: {}", e);
+                            return Ok(());
+                        }
+                    };
+
                     self.active = ActiveBlock::Library;
-                    self.library.set_list(self.app.load_stations().await?);
+                    self.library.set_list(stations);
                 }
                 KeyCode::F(2) => {
+                    let devices = match self.app.devices() {
+                        Ok(devices) => devices,
+                        Err(e) => {
+                            log::error!("load devices list failed: {}", e);
+                            return Ok(());
+                        }
+                    };
+
                     self.active = ActiveBlock::Devices;
-                    self.devices.set_list(self.app.devices()?);
+                    self.devices.set_list(devices);
                 }
                 KeyCode::Char('+' | '=') => self.app.volume_up(),
                 KeyCode::Char('-') => self.app.volume_down(),

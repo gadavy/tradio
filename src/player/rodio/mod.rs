@@ -1,14 +1,14 @@
-use std::{fmt, time::Duration};
 use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering}, Mutex,
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
 };
+use std::{fmt, time::Duration};
 
 use anyhow::Context;
-use rodio::{cpal, DeviceTrait, OutputStream, Sink, Source};
 use rodio::cpal::traits::HostTrait;
 use rodio::queue::SourcesQueueOutput;
 use rodio::source::Stoppable;
+use rodio::{cpal, DeviceTrait, OutputStream, Sink, Source};
 
 use super::{Device, Player};
 
@@ -21,20 +21,20 @@ struct Controls {
 
 #[derive(Default)]
 struct ActiveOutput {
-    device: Option<rodio::Device>,
+    device: Option<Device>,
     stream: Option<OutputStream>,
 }
 
 impl fmt::Debug for ActiveOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ActiveOutput")
-            .field("with_device", &self.device.is_some())
+            .field("device", &self.device)
             .field("with_stream", &self.stream.is_some())
             .finish()
     }
 }
 
-pub struct RodioPlayer {
+pub struct Rodio {
     sink: Sink,
     queue_rx: SharedSourcesQueue,
 
@@ -42,9 +42,10 @@ pub struct RodioPlayer {
     active_out: Mutex<ActiveOutput>,
 }
 
-impl RodioPlayer {
+impl Rodio {
     const ACCESS_PERIOD: Duration = Duration::from_millis(15);
 
+    /// Builds new `RodioPlayer` without output stream.
     pub fn new_idle() -> Self {
         let (sink, queue_rx) = Sink::new_idle();
         let queue_rx = SharedSourcesQueue::from(queue_rx);
@@ -57,6 +58,7 @@ impl RodioPlayer {
         }
     }
 
+    /// Builds new `RodioPlayer` beginning playback on a default output stream.
     pub fn default() -> anyhow::Result<Self> {
         let player = Self::new_idle();
 
@@ -68,9 +70,9 @@ impl RodioPlayer {
     }
 }
 
-impl Player for RodioPlayer {
-    fn play(&self, track_path: &str) -> anyhow::Result<()> {
-        let source = source::SymphoniaSource::from_http(track_path)?;
+impl Player for Rodio {
+    fn play(&self, track_url: &str) -> anyhow::Result<()> {
+        let source = source::Symphonia::from_http(track_url)?;
 
         let controls = self.controls.clone();
 
@@ -118,29 +120,37 @@ impl Player for RodioPlayer {
         self.sink.is_paused()
     }
 
-    /// Current volume in percentage [0 - 100].
     fn volume(&self) -> i8 {
         (self.sink.volume() * 100.0).round() as i8
     }
 
-    /// Set volume in percentage [0 - 100].
     fn set_volume(&self, volume: i8) {
         self.sink
-            .set_volume(f32::from(volume.clamp(0, 100)) / 100.0);
+            .set_volume(volume.clamp(0, 100) as f32 / 100.0);
     }
 
     fn devices(&self) -> anyhow::Result<Vec<Device>> {
         let host = cpal::default_host();
-        let devices = host.output_devices()?;
+        let devices = host.output_devices().context("output devices")?;
         let default_device = host.default_output_device();
         let active_out = self.active_out.lock().unwrap();
 
         let mut result = vec![];
 
         for device in devices {
-            let id = device.name().context("can't get device name")?;
-            let is_active = device_equal(&device, &active_out.device)?;
-            let is_default = device_equal(&device, &default_device)?;
+            let id = device.name()?;
+
+            let is_active = if let Some(ref device) = active_out.device {
+                id == device.id
+            } else {
+                false
+            };
+
+            let is_default = if let Some(ref device) = default_device {
+                id == device.name()?
+            } else {
+                false
+            };
 
             result.push(Device {
                 id,
@@ -153,9 +163,15 @@ impl Player for RodioPlayer {
     }
 
     fn use_device(&self, device: &Device) -> anyhow::Result<()> {
+        let mut active_out = self.active_out.lock().unwrap();
+
+        if Some(device) == active_out.device.as_ref() {
+            return Ok(());
+        }
+
         let mut devices = cpal::default_host().devices()?;
 
-        let device = loop {
+        let rodio_device = loop {
             if let Some(target) = devices.next() {
                 if target.name()? == device.id {
                     break target;
@@ -165,24 +181,22 @@ impl Player for RodioPlayer {
             }
         };
 
-        let mut active_out = self.active_out.lock().unwrap();
-
-        if device_equal(&device, &active_out.device)? {
-            return Ok(());
-        }
-
-        let (stream, handler) = OutputStream::try_from_device(&device)?;
+        let (stream, handler) = OutputStream::try_from_device(&rodio_device)?;
 
         active_out.stream = Some(stream);
-        active_out.device = Some(device);
+        active_out.device = Some(device.clone());
 
         handler.play_raw(self.queue_rx.clone())?;
 
         Ok(())
     }
+
+    fn active_device(&self) -> Option<Device> {
+        self.active_out.lock().unwrap().device.clone()
+    }
 }
 
-impl fmt::Debug for RodioPlayer {
+impl fmt::Debug for Rodio {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RodioPlayer")
             .field("controls", &self.controls)
@@ -223,13 +237,5 @@ impl Iterator for SharedSourcesQueue {
 impl From<SourcesQueueOutput<f32>> for SharedSourcesQueue {
     fn from(value: SourcesQueueOutput<f32>) -> Self {
         Self(Arc::new(Mutex::new(value)))
-    }
-}
-
-fn device_equal(a: &rodio::Device, b: &Option<rodio::Device>) -> anyhow::Result<bool> {
-    if let Some(b) = b {
-        Ok(a.name()? == b.name()?)
-    } else {
-        Ok(false)
     }
 }

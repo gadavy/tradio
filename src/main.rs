@@ -35,9 +35,9 @@ async fn main() -> anyhow::Result<()> {
     simplelog::WriteLogger::init(opt.level, simplelog::Config::default(), log_file)
         .context("init logger")?;
 
+    let player = player::Rodio::default()?;
     let client = api::Client::new(&opt.radio_browser_url);
 
-    let player = player::RodioPlayer::default()?;
     let application = app::App::new(player, client)?;
 
     let mut ui = ui::Ui::new(application);

@@ -12,7 +12,7 @@ pub struct App {
 
 impl App {
     pub fn new<P: Player + 'static>(player: P, client: Client) -> anyhow::Result<Self> {
-        let active_device = player.devices()?.into_iter().find(|d| d.is_active());
+        let active_device = player.devices()?.into_iter().find(Device::is_active);
 
         Ok(Self {
             player: Box::new(player),
@@ -47,7 +47,7 @@ impl App {
 
     pub fn stop(&mut self) {
         self.player.stop();
-        self.playing_station = None
+        self.playing_station = None;
     }
 
     pub fn volume(&self) -> i8 {
@@ -63,14 +63,17 @@ impl App {
     }
 
     pub fn current_device_name(&self) -> String {
-        self.active_device.as_ref().map(|d| d.id()).unwrap_or("NONE").to_string()
+        self.active_device
+            .as_ref()
+            .map_or("NONE", Device::id)
+            .to_string()
     }
 
     pub fn devices(&self) -> anyhow::Result<Vec<Device>> {
         self.player.devices()
     }
 
-    pub async fn use_device(&self, device: &Device) -> anyhow::Result<()> {
+    pub fn use_device(&self, device: &Device) -> anyhow::Result<()> {
         self.player.use_device(device)?;
 
         Ok(())

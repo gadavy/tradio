@@ -12,7 +12,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::default::{get_codecs, get_probe};
 
-pub struct SymphoniaSource {
+pub struct Symphonia {
     reader: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
 
@@ -21,7 +21,7 @@ pub struct SymphoniaSource {
     spec: SignalSpec,
 }
 
-impl SymphoniaSource {
+impl Symphonia {
     pub fn from_http(url: &str) -> anyhow::Result<Self> {
         let resp = reqwest::blocking::Client::builder()
             .connect_timeout(Duration::from_secs(5))
@@ -68,7 +68,7 @@ impl SymphoniaSource {
     }
 }
 
-impl Source for SymphoniaSource {
+impl Source for Symphonia {
     #[inline]
     fn current_frame_len(&self) -> Option<usize> {
         Some(self.buffer.samples().len())
@@ -90,7 +90,7 @@ impl Source for SymphoniaSource {
     }
 }
 
-impl Iterator for SymphoniaSource {
+impl Iterator for Symphonia {
     type Item = i16;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -119,7 +119,7 @@ impl Iterator for SymphoniaSource {
     }
 }
 
-impl fmt::Debug for SymphoniaSource {
+impl fmt::Debug for Symphonia {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut formatter = f.debug_struct("SymphoniaSource");
         formatter.field("offset", &self.offset);

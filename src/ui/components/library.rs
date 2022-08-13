@@ -1,7 +1,8 @@
-use crate::app;
-use crate::models::Station;
 use crossterm::event::{Event, KeyCode};
 use tui::widgets::TableState;
+
+use crate::app;
+use crate::models::Station;
 
 pub struct Library {
     list: Vec<Station>,
@@ -45,16 +46,16 @@ impl Library {
         &self.list[self.selected.selected().unwrap_or(0)]
     }
 
-    pub async fn handle_event(
-        &mut self,
-        event: Event,
-        app: &mut app::App,
-    ) -> anyhow::Result<()> {
+    pub async fn handle_event(&mut self, event: Event, app: &mut app::App) -> anyhow::Result<()> {
         if let Event::Key(key) = event {
             match key.code {
                 KeyCode::Up => self.up(),
                 KeyCode::Down => self.down(),
-                KeyCode::Enter => app.play(self.selected().clone())?,
+                KeyCode::Enter => {
+                    if let Err(e) = app.play(self.selected().clone()) {
+                        log::error!("play station {:?} failed {}", self.selected(), e);
+                    }
+                }
                 KeyCode::Char('p') => {
                     if app.is_paused() {
                         app.resume();

@@ -51,18 +51,14 @@ impl Devices {
         }
     }
 
-    pub async fn handle_event(
-        &mut self,
-        event: Event,
-        app: &app::App,
-    ) -> anyhow::Result<()> {
+    pub async fn handle_event(&mut self, event: Event, app: &app::App) -> anyhow::Result<()> {
         if let Event::Key(key) = event {
             match key.code {
                 KeyCode::Up => self.up(),
                 KeyCode::Down => self.down(),
                 KeyCode::Enter => {
                     if let Some(d) = self.selected() {
-                        app.use_device(d).await?;
+                        app.use_device(d)?;
                     }
                 }
                 _ => {}
