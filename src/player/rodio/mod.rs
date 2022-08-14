@@ -125,8 +125,7 @@ impl Player for Rodio {
     }
 
     fn set_volume(&self, volume: i8) {
-        self.sink
-            .set_volume(volume.clamp(0, 100) as f32 / 100.0);
+        self.sink.set_volume(volume.clamp(0, 100) as f32 / 100.0);
     }
 
     fn devices(&self) -> anyhow::Result<Vec<Device>> {

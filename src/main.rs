@@ -7,6 +7,7 @@ mod api;
 mod app;
 mod models;
 mod player;
+mod storage;
 mod ui;
 
 /// TODO: add about.
@@ -24,6 +25,10 @@ struct Opt {
     /// Radio browser address
     #[clap(long, default_value = "https://de1.api.radio-browser.info")]
     radio_browser_url: String,
+
+    /// SQLite database path
+    #[clap(long, default_value = "tradio.db")]
+    db_path: String,
 }
 
 #[tokio::main]
@@ -36,11 +41,10 @@ async fn main() -> anyhow::Result<()> {
         .context("init logger")?;
 
     let player = player::Rodio::default()?;
-    let client = api::Client::new(&opt.radio_browser_url);
+    let storage = storage::Sqlite::new(&opt.db_path).await?;
+    let client = api::RadioBrowser::new(&opt.radio_browser_url);
 
-    let application = app::App::new(player, client)?;
+    let app = app::App::new(player, storage, client)?;
 
-    let mut ui = ui::Ui::new(application);
-
-    ui.start().await
+    ui::Ui::new(app).start().await
 }

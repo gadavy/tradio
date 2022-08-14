@@ -1,22 +1,30 @@
 use crate::api::Client;
 use crate::models::Station;
 use crate::player::{Device, Player};
+use crate::storage::Storage;
 
 pub struct App {
     pub player: Box<dyn Player>,
-    pub client: Client,
+    pub storage: Box<dyn Storage>,
+    pub client: Box<dyn Client>,
 
     pub active_device: Option<Device>,
     pub playing_station: Option<Station>,
 }
 
 impl App {
-    pub fn new<P: Player + 'static>(player: P, client: Client) -> anyhow::Result<Self> {
+    pub fn new<P, S, C>(player: P, storage: S, client: C) -> anyhow::Result<Self>
+    where
+        P: Player + 'static,
+        S: Storage + 'static,
+        C: Client + 'static,
+    {
         let active_device = player.devices()?.into_iter().find(Device::is_active);
 
         Ok(Self {
             player: Box::new(player),
-            client,
+            storage: Box::new(storage),
+            client: Box::new(client),
             active_device,
             playing_station: None,
         })
