@@ -4,7 +4,6 @@ use log::LevelFilter;
 use std::fs;
 
 mod api;
-mod app;
 mod models;
 mod player;
 mod storage;
@@ -44,7 +43,5 @@ async fn main() -> anyhow::Result<()> {
     let storage = storage::Sqlite::new(&opt.db_path).await?;
     let client = api::RadioBrowser::new(&opt.radio_browser_url);
 
-    let app = app::App::new(player, storage, client)?;
-
-    ui::Ui::new(app).start().await
+    ui::Ui::new(player, storage, client).start().await
 }

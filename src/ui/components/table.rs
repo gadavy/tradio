@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use tui::backend::Backend;
 use tui::layout::Rect;
@@ -11,7 +11,7 @@ pub struct Table<'a, T> {
     list: Vec<T>,
     state: Option<TableState>,
 
-    row_builder: Rc<dyn Fn(&T) -> Row>,
+    row_builder: Arc<dyn Fn(&T) -> Row>,
     styles: Styles<'a>,
 }
 
@@ -23,7 +23,7 @@ impl<'a, T> Table<'a, T> {
         Self {
             list,
             state: None,
-            row_builder: Rc::new(row_builder),
+            row_builder: Arc::new(row_builder),
             styles,
         }
     }

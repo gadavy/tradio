@@ -16,28 +16,42 @@ use tui::{Frame, Terminal};
 
 use components::{Component, Styles, Table};
 
-use crate::app;
+use crate::api::Client;
 use crate::models::Station;
-use crate::player::Device;
+use crate::player::{Device, Player};
+use crate::storage::Storage;
 
 mod components;
 
-pub enum ActiveBlock {
+pub enum ActiveLayout {
     Library,
     Devices,
 }
 
-pub struct Ui<'a> {
-    app: app::App,
-    exit: tokio::sync::Notify,
+pub struct Ui<'a, P, S, C>
+where
+    P: Player,
+    S: Storage,
+    C: Client,
+{
+    player: P,
+    storage: S,
+    client: C,
 
-    active: ActiveBlock,
+    active_layout: ActiveLayout,
+    active_station: Option<Station>,
+
     library: Table<'a, Station>,
     devices: Table<'a, Device>,
 }
 
-impl<'a> Ui<'a> {
-    pub fn new(app: app::App) -> Self {
+impl<'a, P, S, C> Ui<'a, P, S, C>
+where
+    P: Player,
+    S: Storage,
+    C: Client,
+{
+    pub fn new(player: P, storage: S, client: C) -> Self {
         let library = Table::<Station>::new(
             vec![],
             |s| {
@@ -103,9 +117,11 @@ impl<'a> Ui<'a> {
         .with_state();
 
         Self {
-            app,
-            exit: tokio::sync::Notify::new(),
-            active: ActiveBlock::Library,
+            player,
+            storage,
+            client,
+            active_layout: ActiveLayout::Library,
+            active_station: None,
             library,
             devices,
         }
@@ -118,8 +134,8 @@ impl<'a> Ui<'a> {
         let mut terminal = Terminal::new(backend)?;
         terminal.hide_cursor().context("hide cursor")?;
 
-        self.library.set(self.app.load_stations().await?);
-        self.devices.set(self.app.devices()?);
+        self.library.set(self.client.stations().await?);
+        self.devices.set(self.player.devices()?);
 
         let mut reader = EventStream::new();
 
@@ -128,23 +144,28 @@ impl<'a> Ui<'a> {
 
             tokio::select! {
                 event = reader.next().fuse() => {
-                    if let Some(Ok(Event::Key(key_event))) = event {
-                        self.handle_key(key_event).await?;
+                    let key_event = match event {
+                        Some(Ok(Event::Key(key_event))) => key_event,
+                        _ => continue
+                    };
+
+                    match self.handle_key(key_event).await {
+                        Ok(false) => break,
+                        Ok(true) => continue,
+                        Err(e) => log::error!("handle key {:?}: {:?}", key_event.code, e),
                     }
                 },
-                _ = self.exit.notified() => break
             }
         }
 
-        self.app.stop();
+        self.player.stop();
+        self.active_station = None;
 
         shutdown_terminal()
     }
 
     fn draw<B: Backend>(&mut self, f: &mut Frame<B>) {
-        let playing = self.app.playing();
-
-        let constraints = if playing.is_some() {
+        let constraints = if self.active_station.is_some() {
             vec![Constraint::Min(1), Constraint::Length(3)]
         } else {
             vec![Constraint::Min(1)]
@@ -155,21 +176,25 @@ impl<'a> Ui<'a> {
             .constraints(constraints)
             .split(f.size());
 
-        match self.active {
-            ActiveBlock::Library => self.library.draw(f, layout[0]),
-            ActiveBlock::Devices => self.devices.draw(f, layout[0]),
+        match self.active_layout {
+            ActiveLayout::Library => self.library.draw(f, layout[0]),
+            ActiveLayout::Devices => self.devices.draw(f, layout[0]),
         }
 
-        if let Some(station) = playing {
+        if let Some(ref station) = self.active_station {
             let title = format!(
                 "{:-7} ({} | Volume: {:-2}%)",
-                if self.app.is_paused() {
+                if self.player.is_paused() {
                     "Paused"
                 } else {
                     "Playing"
                 },
-                self.app.current_device_name(),
-                self.app.volume()
+                self.player
+                    .active_device()
+                    .as_ref()
+                    .map_or("NONE", Device::id)
+                    .to_string(),
+                self.player.volume()
             );
 
             let text = vec![Spans::from(format!("Station: {}", station.name.trim()))];
@@ -187,80 +212,72 @@ impl<'a> Ui<'a> {
         }
     }
 
-    async fn handle_key(&mut self, event: KeyEvent) -> anyhow::Result<()> {
+    async fn handle_key(&mut self, event: KeyEvent) -> anyhow::Result<bool> {
         match event.code {
-            KeyCode::Char('q' | 'й') => self.exit.notify_one(),
-            KeyCode::F(1) => {
-                let stations = match self.app.load_stations().await {
-                    Ok(stations) => stations,
-                    Err(e) => {
-                        log::error!("load stations list failed: {}", e);
-                        return Ok(());
-                    }
-                };
-
-                self.active = ActiveBlock::Library;
-                self.library.set(stations);
-            }
-            KeyCode::F(2) => {
-                let devices = match self.app.devices() {
-                    Ok(devices) => devices,
-                    Err(e) => {
-                        log::error!("load devices list failed: {}", e);
-                        return Ok(());
-                    }
-                };
-
-                self.active = ActiveBlock::Devices;
-                self.devices.set(devices);
-            }
-            KeyCode::Char('+' | '=') => {
-                self.app.volume_up();
-            }
-            KeyCode::Char('-') => {
-                self.app.volume_down();
-            }
-            KeyCode::Up => {
-                match self.active {
-                    ActiveBlock::Library => self.library.up(),
-                    ActiveBlock::Devices => self.devices.up(),
-                };
-            }
-            KeyCode::Down => {
-                match self.active {
-                    ActiveBlock::Library => self.library.down(),
-                    ActiveBlock::Devices => self.devices.down(),
-                };
-            }
-            KeyCode::Enter => {
-                match self.active {
-                    ActiveBlock::Library => {
-                        if let Some(selected) = self.library.selected() {
-                            if let Err(e) = self.app.play(selected.clone()) {
-                                log::error!("play station {:?} failed {}", selected, e);
-                            };
-                        }
-                    }
-                    ActiveBlock::Devices => {
-                        if let Some(selected) = self.devices.selected() {
-                            if let Err(e) = self.app.use_device(selected) {
-                                log::error!("use device {:?} failed {}", selected, e);
-                            };
-                        }
-                    }
-                };
-            }
-            KeyCode::Char('p' | 'з') => {
-                if self.app.is_paused() {
-                    self.app.resume();
-                } else {
-                    self.app.pause();
-                }
-            }
+            KeyCode::Char('q' | 'й') => return Ok(false),
+            KeyCode::F(1) => self.handle_set_layout(ActiveLayout::Library).await?,
+            KeyCode::F(2) => self.handle_set_layout(ActiveLayout::Devices).await?,
+            KeyCode::Char('+' | '=') => self.player.set_volume(self.player.volume() + 5),
+            KeyCode::Char('-') => self.player.set_volume(self.player.volume() - 5),
+            KeyCode::Up => self.handle_up(),
+            KeyCode::Down => self.handle_down(),
+            KeyCode::Enter => self.handle_enter()?,
+            KeyCode::Char('p' | 'з') => self.handle_pause(),
             _ => {}
         }
 
+        Ok(true)
+    }
+
+    async fn handle_set_layout(&mut self, layout: ActiveLayout) -> anyhow::Result<()> {
+        match layout {
+            ActiveLayout::Library => self.library.set(self.client.stations().await?),
+            ActiveLayout::Devices => self.devices.set(self.player.devices()?),
+        }
+
+        self.active_layout = layout;
+
         Ok(())
+    }
+
+    fn handle_enter(&mut self) -> anyhow::Result<()> {
+        match self.active_layout {
+            ActiveLayout::Library => {
+                if let Some(selected) = self.library.selected() {
+                    self.player.play(&selected.url)?;
+                    self.active_station = Some(selected.clone());
+                }
+            }
+            ActiveLayout::Devices => {
+                if let Some(selected) = self.devices.selected() {
+                    self.player.use_device(selected)?;
+                }
+            }
+        };
+
+        Ok(())
+    }
+
+    fn handle_pause(&mut self) {
+        if self.player.is_paused() {
+            self.player.resume();
+        } else {
+            self.player.pause();
+        }
+    }
+
+    fn handle_up(&mut self) {
+        match self.active_layout {
+            ActiveLayout::Library => self.library.up(),
+            ActiveLayout::Devices => self.devices.up(),
+        };
+    }
+
+    fn handle_down(&mut self) {
+        match self.active_layout {
+            ActiveLayout::Library => self.library.down(),
+            ActiveLayout::Devices => self.devices.down(),
+        };
     }
 }
 
