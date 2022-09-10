@@ -1,22 +1,24 @@
 use std::io;
-use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
+use crossterm::execute;
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use tui::{
-    backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
-    Frame, Terminal,
-};
+use futures::{FutureExt, StreamExt};
+use tui::backend::{Backend, CrosstermBackend};
+use tui::layout::{Alignment, Constraint, Direction, Layout};
+use tui::style::{Color, Modifier, Style};
+use tui::text::{Span, Spans};
+use tui::widgets::{Block, BorderType, Borders, Cell, Paragraph, Row};
+use tui::{Frame, Terminal};
 
-use components::devices::Devices;
-use components::library::Library;
+use components::{Component, Styles, Table};
 
 use crate::app;
+use crate::models::Station;
+use crate::player::Device;
 
 mod components;
 
@@ -25,23 +27,84 @@ pub enum ActiveBlock {
     Devices,
 }
 
-pub struct Ui {
+pub struct Ui<'a> {
     app: app::App,
-    closed: bool,
+    exit: tokio::sync::Notify,
 
     active: ActiveBlock,
-    library: Library,
-    devices: Devices,
+    library: Table<'a, Station>,
+    devices: Table<'a, Device>,
 }
 
-impl Ui {
+impl<'a> Ui<'a> {
     pub fn new(app: app::App) -> Self {
-        let library = Library::new();
-        let devices = Devices::new();
+        let library = Table::<Station>::new(
+            vec![],
+            |s| {
+                Row::new(vec![
+                    Cell::from(Span::raw(format!("🔈 {}", s.name.trim()))),
+                    Cell::from(Span::raw(s.country.as_str())),
+                    Cell::from(Span::raw(s.codec.as_str())),
+                    Cell::from(Span::raw(s.bitrate.to_string())),
+                ])
+            },
+            Styles {
+                block: Some(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .title("Library"),
+                ),
+                highlight_style: Some(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                widths: Some(&[
+                    Constraint::Percentage(60),
+                    Constraint::Percentage(20),
+                    Constraint::Percentage(10),
+                    Constraint::Percentage(10),
+                ]),
+            },
+        )
+        .with_state();
+
+        let devices = Table::<Device>::new(
+            vec![],
+            |d| {
+                let mut text = d.id().to_string();
+
+                if d.is_active() {
+                    text.push_str(" (active)");
+                }
+
+                if d.is_default() {
+                    text.push_str(" (default)");
+                }
+
+                Row::new(vec![Cell::from(Span::raw(text))])
+            },
+            Styles {
+                block: Some(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .title("Devices"),
+                ),
+                highlight_style: Some(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                widths: Some(&[Constraint::Percentage(100)]),
+            },
+        )
+        .with_state();
 
         Self {
             app,
-            closed: false,
+            exit: tokio::sync::Notify::new(),
             active: ActiveBlock::Library,
             library,
             devices,
@@ -52,35 +115,24 @@ impl Ui {
         setup_terminal()?;
 
         let backend = CrosstermBackend::new(io::stdout());
-
         let mut terminal = Terminal::new(backend)?;
         terminal.hide_cursor().context("hide cursor")?;
 
-        let tick_rate = Duration::from_millis(250);
-        let mut last_tick = Instant::now();
+        self.library.set(self.app.load_stations().await?);
+        self.devices.set(self.app.devices()?);
 
-        self.library.set_list(self.app.load_stations().await?);
-        self.devices.set_list(self.app.devices()?);
+        let mut reader = EventStream::new();
 
         loop {
-            // TODO: draw on gui on app events?
-            //  draw only changed elements?
             terminal.draw(|f| self.draw(f))?;
 
-            let timeout = tick_rate
-                .checked_sub(last_tick.elapsed())
-                .unwrap_or_else(|| Duration::from_secs(0));
-
-            if event::poll(timeout)? {
-                self.handle_event(event::read()?).await?;
-
-                if self.closed {
-                    break;
-                }
-            }
-
-            if last_tick.elapsed() >= tick_rate {
-                last_tick = Instant::now();
+            tokio::select! {
+                event = reader.next().fuse() => {
+                    if let Some(Ok(Event::Key(key_event))) = event {
+                        self.handle_key(key_event).await?;
+                    }
+                },
+                _ = self.exit.notified() => break
             }
         }
 
@@ -104,15 +156,11 @@ impl Ui {
             .split(f.size());
 
         match self.active {
-            ActiveBlock::Library => self.library.render(f, layout[0]),
-            ActiveBlock::Devices => self.devices.render(f, layout[0]),
+            ActiveBlock::Library => self.library.draw(f, layout[0]),
+            ActiveBlock::Devices => self.devices.draw(f, layout[0]),
         }
 
         if let Some(station) = playing {
-            use tui::layout::Alignment;
-            use tui::text::Spans;
-            use tui::widgets::{Block, BorderType, Borders, Paragraph};
-
             let title = format!(
                 "{:-7} ({} | Volume: {:-2}%)",
                 if self.app.is_paused() {
@@ -139,44 +187,80 @@ impl Ui {
         }
     }
 
-    async fn handle_event(&mut self, event: Event) -> anyhow::Result<()> {
-        if let Event::Key(key) = event {
-            match key.code {
-                KeyCode::Char('q') => self.closed = true,
-                KeyCode::F(1) => {
-                    let stations = match self.app.load_stations().await {
-                        Ok(stations) => stations,
-                        Err(e) => {
-                            log::error!("load stations list failed: {}", e);
-                            return Ok(());
-                        }
-                    };
+    async fn handle_key(&mut self, event: KeyEvent) -> anyhow::Result<()> {
+        match event.code {
+            KeyCode::Char('q' | 'й') => self.exit.notify_one(),
+            KeyCode::F(1) => {
+                let stations = match self.app.load_stations().await {
+                    Ok(stations) => stations,
+                    Err(e) => {
+                        log::error!("load stations list failed: {}", e);
+                        return Ok(());
+                    }
+                };
 
-                    self.active = ActiveBlock::Library;
-                    self.library.set_list(stations);
-                }
-                KeyCode::F(2) => {
-                    let devices = match self.app.devices() {
-                        Ok(devices) => devices,
-                        Err(e) => {
-                            log::error!("load devices list failed: {}", e);
-                            return Ok(());
-                        }
-                    };
+                self.active = ActiveBlock::Library;
+                self.library.set(stations);
+            }
+            KeyCode::F(2) => {
+                let devices = match self.app.devices() {
+                    Ok(devices) => devices,
+                    Err(e) => {
+                        log::error!("load devices list failed: {}", e);
+                        return Ok(());
+                    }
+                };
 
-                    self.active = ActiveBlock::Devices;
-                    self.devices.set_list(devices);
+                self.active = ActiveBlock::Devices;
+                self.devices.set(devices);
+            }
+            KeyCode::Char('+' | '=') => {
+                self.app.volume_up();
+            }
+            KeyCode::Char('-') => {
+                self.app.volume_down();
+            }
+            KeyCode::Up => {
+                match self.active {
+                    ActiveBlock::Library => self.library.up(),
+                    ActiveBlock::Devices => self.devices.up(),
+                };
+            }
+            KeyCode::Down => {
+                match self.active {
+                    ActiveBlock::Library => self.library.down(),
+                    ActiveBlock::Devices => self.devices.down(),
+                };
+            }
+            KeyCode::Enter => {
+                match self.active {
+                    ActiveBlock::Library => {
+                        if let Some(selected) = self.library.selected() {
+                            if let Err(e) = self.app.play(selected.clone()) {
+                                log::error!("play station {:?} failed {}", selected, e);
+                            };
+                        }
+                    }
+                    ActiveBlock::Devices => {
+                        if let Some(selected) = self.devices.selected() {
+                            if let Err(e) = self.app.use_device(selected) {
+                                log::error!("use device {:?} failed {}", selected, e);
+                            };
+                        }
+                    }
+                };
+            }
+            KeyCode::Char('p' | 'з') => {
+                if self.app.is_paused() {
+                    self.app.resume();
+                } else {
+                    self.app.pause();
                 }
-                KeyCode::Char('+' | '=') => self.app.volume_up(),
-                KeyCode::Char('-') => self.app.volume_down(),
-                _ => {}
-            };
+            }
+            _ => {}
         }
 
-        match self.active {
-            ActiveBlock::Library => self.library.handle_event(event, &mut self.app).await,
-            ActiveBlock::Devices => self.devices.handle_event(event, &self.app).await,
-        }
+        Ok(())
     }
 }
 

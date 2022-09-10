@@ -46,3 +46,9 @@ impl From<&str> for Tags {
         Self(value.split(',').map(|p| p.trim().to_string()).collect())
     }
 }
+
+impl From<Vec<String>> for Tags {
+    fn from(value: Vec<String>) -> Self {
+        Self(value)
+    }
+}
