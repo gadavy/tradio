@@ -8,13 +8,13 @@ use crossterm::terminal::{
 };
 use futures::{FutureExt, StreamExt};
 use tui::backend::{Backend, CrosstermBackend};
-use tui::layout::{Alignment, Constraint, Direction, Layout};
+use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
-use tui::text::{Span, Spans};
-use tui::widgets::{Block, BorderType, Borders, Cell, Paragraph, Row};
+use tui::text::Span;
+use tui::widgets::{Block, BorderType, Borders, Cell, Row};
 use tui::{Frame, Terminal};
 
-use components::{Component, Styles, Table};
+use components::{Component, Playbar, Styles, Table};
 
 use crate::api::Client;
 use crate::models::Station;
@@ -23,6 +23,7 @@ use crate::storage::Storage;
 
 mod components;
 
+#[derive(PartialEq)]
 pub enum ActiveLayout {
     Library,
     Devices,
@@ -39,10 +40,10 @@ where
     client: C,
 
     active_layout: ActiveLayout,
-    active_station: Option<Station>,
 
     library: Table<'a, Station>,
     devices: Table<'a, Device>,
+    playbar: Playbar,
 }
 
 impl<'a, P, S, C> Ui<'a, P, S, C>
@@ -116,14 +117,16 @@ where
         )
         .with_state();
 
+        let playbar = Playbar::new(&player);
+
         Self {
             player,
             storage,
             client,
             active_layout: ActiveLayout::Library,
-            active_station: None,
             library,
             devices,
+            playbar,
         }
     }
 
@@ -159,17 +162,13 @@ where
         }
 
         self.player.stop();
-        self.active_station = None;
+        self.playbar.set_station(None);
 
         shutdown_terminal()
     }
 
     fn draw<B: Backend>(&mut self, f: &mut Frame<B>) {
-        let constraints = if self.active_station.is_some() {
-            vec![Constraint::Min(1), Constraint::Length(3)]
-        } else {
-            vec![Constraint::Min(1)]
-        };
+        let constraints = vec![Constraint::Min(1), Constraint::Length(3)];
 
         let layout = Layout::default()
             .direction(Direction::Vertical)
@@ -181,42 +180,15 @@ where
             ActiveLayout::Devices => self.devices.draw(f, layout[0]),
         }
 
-        if let Some(ref station) = self.active_station {
-            let title = format!(
-                "{:-7} ({} | Volume: {:-2}%)",
-                if self.player.is_paused() {
-                    "Paused"
-                } else {
-                    "Playing"
-                },
-                self.player
-                    .active_device()
-                    .as_ref()
-                    .map_or("NONE", Device::id)
-                    .to_string(),
-                self.player.volume()
-            );
-
-            let text = vec![Spans::from(format!("Station: {}", station.name.trim()))];
-
-            let paragraph = Paragraph::new(text)
-                .block(
-                    Block::default()
-                        .title(title)
-                        .borders(Borders::LEFT | Borders::TOP | Borders::RIGHT)
-                        .border_type(BorderType::Rounded),
-                )
-                .alignment(Alignment::Left);
-
-            f.render_widget(paragraph, layout[1]);
-        }
+        self.playbar.draw(f, layout[1])
     }
 
     async fn handle_key(&mut self, event: KeyEvent) -> anyhow::Result<bool> {
         match event.code {
             KeyCode::Char('q' | 'й') => return Ok(false),
-            KeyCode::F(1) => self.handle_set_layout(ActiveLayout::Library).await?,
-            KeyCode::F(2) => self.handle_set_layout(ActiveLayout::Devices).await?,
+            KeyCode::F(1) => self.handle_set_layout(ActiveLayout::Library)?,
+            KeyCode::F(2) => self.handle_set_layout(ActiveLayout::Devices)?,
+            KeyCode::F(5) => self.handle_refresh().await?,
             KeyCode::Char('+' | '=') => self.player.set_volume(self.player.volume() + 5),
             KeyCode::Char('-') => self.player.set_volume(self.player.volume() - 5),
             KeyCode::Up => self.handle_up(),
@@ -226,16 +198,26 @@ where
             _ => {}
         }
 
+        self.playbar.set_player_settings(&self.player);
+
         Ok(true)
     }
 
-    async fn handle_set_layout(&mut self, layout: ActiveLayout) -> anyhow::Result<()> {
-        match layout {
-            ActiveLayout::Library => self.library.set(self.client.stations().await?),
-            ActiveLayout::Devices => self.devices.set(self.player.devices()?),
+    fn handle_set_layout(&mut self, layout: ActiveLayout) -> anyhow::Result<()> {
+        if layout == ActiveLayout::Devices {
+            self.devices.set(self.player.devices()?)
         }
 
         self.active_layout = layout;
+
+        Ok(())
+    }
+
+    async fn handle_refresh(&mut self) -> anyhow::Result<()> {
+        match self.active_layout {
+            ActiveLayout::Library => self.library.set(self.client.stations().await?),
+            ActiveLayout::Devices => self.devices.set(self.player.devices()?),
+        }
 
         Ok(())
     }
@@ -245,7 +227,7 @@ where
             ActiveLayout::Library => {
                 if let Some(selected) = self.library.selected() {
                     self.player.play(&selected.url)?;
-                    self.active_station = Some(selected.clone());
+                    self.playbar.set_station(Some(selected));
                 }
             }
             ActiveLayout::Devices => {
