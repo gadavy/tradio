@@ -34,6 +34,10 @@ impl fmt::Debug for ActiveOutput {
     }
 }
 
+// Safety: we guarantee that `OutputStream` cannot be `Send` on Android's AAudio API.
+#[cfg(not(target_os = "android"))]
+unsafe impl Send for ActiveOutput {}
+
 pub struct Rodio {
     sink: Sink,
     queue_rx: SharedSourcesQueue,
@@ -138,12 +142,7 @@ impl Player for Rodio {
 
         for device in devices {
             let id = device.name()?;
-
-            let is_active = if let Some(ref device) = active_out.device {
-                id == device.id
-            } else {
-                false
-            };
+            let is_active = active_out.device.as_ref().map(Device::id) == Some(&id);
 
             let is_default = if let Some(ref device) = default_device {
                 id == device.name()?

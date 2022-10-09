@@ -2,7 +2,7 @@ pub use self::rodio::Rodio;
 
 mod rodio;
 
-pub trait Player {
+pub trait Player: Send + Sync {
     /// Starts playing given track.
     fn play(&self, track_url: &str) -> anyhow::Result<()>;
 
