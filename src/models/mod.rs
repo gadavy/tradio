@@ -1,5 +1,3 @@
-pub use search_params::{OrderBy, StationsFilter};
-pub use station::Station;
+pub use station::{OrderBy, Station, StationsFilter};
 
-mod search_params;
 mod station;

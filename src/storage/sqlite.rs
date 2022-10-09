@@ -11,6 +11,7 @@ use super::{Station, StationsFilter, Storage};
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
 
+#[derive(Debug, Clone)]
 pub struct Sqlite {
     pool: SqlitePool,
 }
@@ -70,7 +71,7 @@ impl Storage for Sqlite {
         })
     }
 
-    fn search(&self, _params: StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>> {
+    fn search(&self, _filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>> {
         let query = sqlx::query(
             r#"SELECT
                 id,

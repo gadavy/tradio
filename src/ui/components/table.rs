@@ -34,7 +34,13 @@ impl<'a, T> Table<'a, T> {
         self
     }
 
-    pub fn set(&mut self, list: Vec<T>) {
+    pub fn set_selected(&mut self, index: Option<usize>) {
+        if let Some(ref mut state) = self.state {
+            state.select(index)
+        }
+    }
+
+    pub fn set_list(&mut self, list: Vec<T>) {
         self.list = list;
 
         if self.state.is_some() && !self.list.is_empty() {
@@ -42,7 +48,7 @@ impl<'a, T> Table<'a, T> {
         }
     }
 
-    pub fn up(&mut self) {
+    pub fn handle_up(&mut self) {
         if let Some(ref mut state) = self.state {
             let idx = state.selected().unwrap_or(0);
 
@@ -54,7 +60,7 @@ impl<'a, T> Table<'a, T> {
         }
     }
 
-    pub fn down(&mut self) {
+    pub fn handle_down(&mut self) {
         if let Some(ref mut state) = self.state {
             let idx = state.selected().unwrap_or(0);
 
@@ -66,18 +72,22 @@ impl<'a, T> Table<'a, T> {
         }
     }
 
-    pub fn selected(&self) -> Option<&T> {
+    pub fn get_selected(&self) -> Option<&T> {
         if let Some(ref state) = self.state {
             Some(&self.list[state.selected().unwrap_or(0)])
         } else {
             None
         }
     }
+
+    pub(super) fn build_rows(&self) -> Vec<Row> {
+        self.list.iter().map(|s| (self.row_builder)(s)).collect()
+    }
 }
 
 impl<'a, T> Component for Table<'a, T> {
     fn draw<B: Backend>(&self, frame: &mut Frame<B>, area: Rect) {
-        let rows: Vec<Row> = self.list.iter().map(|s| (self.row_builder)(s)).collect();
+        let rows: Vec<Row> = self.build_rows();
         let mut table = tui::widgets::Table::new(rows);
 
         if let Some(ref block) = self.styles.block {

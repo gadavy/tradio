@@ -17,9 +17,9 @@ use tui::{Frame, Terminal};
 use components::{Component, Playbar, Styles, Table};
 
 use crate::api::Client;
-use crate::models::Station;
 use crate::player::{Device, Player};
 use crate::storage::Storage;
+use crate::ui::components::Library;
 
 mod components;
 
@@ -32,8 +32,8 @@ pub enum ActiveLayout {
 pub struct Ui<'a, P, S, C>
 where
     P: Player,
-    S: Storage,
-    C: Client,
+    S: Storage + Clone,
+    C: Client + Clone,
 {
     player: P,
     storage: S,
@@ -41,7 +41,7 @@ where
 
     active_layout: ActiveLayout,
 
-    library: Table<'a, Station>,
+    library: Library<'a, S, C>,
     devices: Table<'a, Device>,
     playbar: Playbar,
 }
@@ -49,41 +49,11 @@ where
 impl<'a, P, S, C> Ui<'a, P, S, C>
 where
     P: Player,
-    S: Storage,
-    C: Client,
+    S: Storage + Clone,
+    C: Client + Clone,
 {
     pub fn new(player: P, storage: S, client: C) -> Self {
-        let library = Table::<Station>::new(
-            vec![],
-            |s| {
-                Row::new(vec![
-                    Cell::from(Span::raw(format!("🔈 {}", s.name.trim()))),
-                    Cell::from(Span::raw(s.country.as_str())),
-                    Cell::from(Span::raw(s.codec.as_str())),
-                    Cell::from(Span::raw(s.bitrate.to_string())),
-                ])
-            },
-            Styles {
-                block: Some(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .title("Library"),
-                ),
-                highlight_style: Some(
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                widths: Some(&[
-                    Constraint::Percentage(60),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(10),
-                ]),
-            },
-        )
-        .with_state();
+        let library = Library::new(storage.clone(), client.clone());
 
         let devices = Table::<Device>::new(
             vec![],
@@ -137,8 +107,8 @@ where
         let mut terminal = Terminal::new(backend)?;
         terminal.hide_cursor().context("hide cursor")?;
 
-        self.library.set(self.client.stations().await?);
-        self.devices.set(self.player.devices()?);
+        self.update_stations().await?;
+        self.update_devices()?;
 
         let mut reader = EventStream::new();
 
@@ -193,8 +163,12 @@ where
             KeyCode::Char('-') => self.player.set_volume(self.player.volume() - 5),
             KeyCode::Up => self.handle_up(),
             KeyCode::Down => self.handle_down(),
+            KeyCode::Left => self.handle_left(),
+            KeyCode::Right => self.handle_right().await?,
             KeyCode::Enter => self.handle_enter()?,
             KeyCode::Char('p' | 'з') => self.handle_pause(),
+            KeyCode::Char('s' | 'ы') => self.library.handle_save().await?,
+            KeyCode::Delete => self.library.handle_delete().await?,
             _ => {}
         }
 
@@ -205,7 +179,7 @@ where
 
     fn handle_set_layout(&mut self, layout: ActiveLayout) -> anyhow::Result<()> {
         if layout == ActiveLayout::Devices {
-            self.devices.set(self.player.devices()?)
+            self.update_devices()?
         }
 
         self.active_layout = layout;
@@ -215,8 +189,8 @@ where
 
     async fn handle_refresh(&mut self) -> anyhow::Result<()> {
         match self.active_layout {
-            ActiveLayout::Library => self.library.set(self.client.stations().await?),
-            ActiveLayout::Devices => self.devices.set(self.player.devices()?),
+            ActiveLayout::Library => self.update_stations().await?,
+            ActiveLayout::Devices => self.update_devices()?,
         }
 
         Ok(())
@@ -225,13 +199,13 @@ where
     fn handle_enter(&mut self) -> anyhow::Result<()> {
         match self.active_layout {
             ActiveLayout::Library => {
-                if let Some(selected) = self.library.selected() {
+                if let Some(selected) = self.library.get_selected() {
                     self.player.play(&selected.url)?;
                     self.playbar.set_station(Some(selected));
                 }
             }
             ActiveLayout::Devices => {
-                if let Some(selected) = self.devices.selected() {
+                if let Some(selected) = self.devices.get_selected() {
                     self.player.use_device(selected)?;
                 }
             }
@@ -250,16 +224,44 @@ where
 
     fn handle_up(&mut self) {
         match self.active_layout {
-            ActiveLayout::Library => self.library.up(),
-            ActiveLayout::Devices => self.devices.up(),
+            ActiveLayout::Library => self.library.handle_up(),
+            ActiveLayout::Devices => self.devices.handle_up(),
         };
     }
 
     fn handle_down(&mut self) {
         match self.active_layout {
-            ActiveLayout::Library => self.library.down(),
-            ActiveLayout::Devices => self.devices.down(),
+            ActiveLayout::Library => self.library.handle_down(),
+            ActiveLayout::Devices => self.devices.handle_down(),
         };
+    }
+
+    fn handle_left(&mut self) {
+        if self.active_layout == ActiveLayout::Library {
+            self.library.handle_left()
+        };
+    }
+
+    async fn handle_right(&mut self) -> anyhow::Result<()> {
+        if self.active_layout == ActiveLayout::Library {
+            self.library.handle_right().await?;
+        };
+
+        Ok(())
+    }
+
+    async fn update_stations(&mut self) -> anyhow::Result<()> {
+        // let stations = self.client.search(&StationsFilter::default()).await?;
+        // self.library.set(stations);
+
+        Ok(())
+    }
+
+    fn update_devices(&mut self) -> anyhow::Result<()> {
+        let devices = self.player.devices()?;
+        self.devices.set_list(devices);
+
+        Ok(())
     }
 }
 

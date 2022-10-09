@@ -5,12 +5,13 @@ use futures::future::BoxFuture;
 use reqwest::{redirect::Policy, ClientBuilder, Url};
 use serde::{de::DeserializeOwned, Deserialize};
 
-use crate::models::Station;
+use crate::models::{OrderBy, Station, StationsFilter};
 
 use super::Client;
 
 const APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
+#[derive(Debug, Clone)]
 pub struct RadioBrowser {
     addr: Arc<Url>,
     client: reqwest::Client,
@@ -18,7 +19,7 @@ pub struct RadioBrowser {
 
 impl RadioBrowser {
     pub fn new(addr: &str) -> Self {
-        let addr = Arc::new(addr.to_string().parse().unwrap()); // todo: expect or error.
+        let addr = Arc::new(addr.to_string().parse().expect("invalid address"));
         let client = ClientBuilder::new()
             .user_agent(APP_USER_AGENT)
             .redirect(Policy::default())
@@ -38,17 +39,38 @@ impl RadioBrowser {
 
         res.json().await.context("unmarshal json")
     }
+
+    fn search_path(&self, filter: &StationsFilter) -> String {
+        let mut path = "/json/stations/search?hidebroken=true&bitrateMin=320".to_string();
+
+        if let Some(limit) = filter.limit {
+            path.push_str("&limit=");
+            path.push_str(&limit.to_string());
+        }
+
+        if let Some(offset) = filter.offset {
+            path.push_str("&offset=");
+            path.push_str(&offset.to_string());
+        }
+
+        if let Some(order_by) = filter.order_by.as_ref().map(|s| s.into()) {
+            path.push_str("&order=");
+            path.push_str(order_by);
+        }
+
+        path
+    }
 }
 
 impl Client for RadioBrowser {
-    fn stations(&self) -> BoxFuture<anyhow::Result<Vec<Station>>> {
+    fn search(&self, filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>> {
         let addr = self.addr.clone();
-        let path = "/json/stations/search?hidebroken=true&min&bitrateMin=320&order=clickcount";
+        let path = self.search_path(filter);
         let client = self.client.clone();
 
         Box::pin(async move {
             let supported_codecs = ["MP3", "FLAC"];
-            let stations: Vec<RadioStation> = Self::get(client, addr, path).await?;
+            let stations: Vec<RadioStation> = Self::get(client, addr, &path).await?;
 
             Ok(stations
                 .into_iter()
@@ -82,6 +104,14 @@ impl From<RadioStation> for Station {
             bitrate: value.bitrate,
             tags: value.tags.into(),
             country: value.country,
+        }
+    }
+}
+
+impl From<&OrderBy> for &str {
+    fn from(value: &OrderBy) -> Self {
+        match value {
+            OrderBy::CreatedAt => "",
         }
     }
 }

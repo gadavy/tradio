@@ -52,3 +52,14 @@ impl From<Vec<String>> for Tags {
         Self(value)
     }
 }
+
+pub enum OrderBy {
+    CreatedAt,
+}
+
+#[derive(Default)]
+pub struct StationsFilter {
+    pub order_by: Option<OrderBy>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}

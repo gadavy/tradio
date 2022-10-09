@@ -11,7 +11,7 @@ pub trait Storage {
     fn create(&self, station: &Station) -> BoxFuture<anyhow::Result<i64>>;
 
     /// Search stations by filter.
-    fn search(&self, filter: StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>>;
+    fn search(&self, filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>>;
 
     /// Update current `Station` in database.
     fn update(&self, station: &Station) -> BoxFuture<anyhow::Result<()>>;

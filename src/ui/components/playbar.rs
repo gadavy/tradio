@@ -36,6 +36,27 @@ impl Playbar {
         self.station = station.map(|s| s.name.trim().to_string())
     }
 
+    fn get_title(&self) -> String {
+        format!(
+            "{:-7} ({} | Volume: {:-2}%)",
+            if self.is_paused || self.station.is_none() {
+                "Paused"
+            } else {
+                "Playing"
+            },
+            self.device,
+            self.volume
+        )
+    }
+
+    fn get_text(&self) -> Vec<Spans> {
+        if let Some(ref station) = self.station {
+            vec![Spans::from(format!("Station: {}", station.trim()))]
+        } else {
+            vec![]
+        }
+    }
+
     fn device_name<P: Player>(player: &P) -> String {
         player
             .active_device()
@@ -47,27 +68,10 @@ impl Playbar {
 
 impl Component for Playbar {
     fn draw<B: Backend>(&self, frame: &mut Frame<B>, area: Rect) {
-        let title = format!(
-            "{:-7} ({} | Volume: {:-2}%)",
-            if self.is_paused || self.station.is_none() {
-                "Paused"
-            } else {
-                "Playing"
-            },
-            self.device,
-            self.volume
-        );
-
-        let text = if let Some(ref station) = self.station {
-            vec![Spans::from(format!("Station: {}", station.trim()))]
-        } else {
-            vec![]
-        };
-
-        let paragraph = Paragraph::new(text)
+        let paragraph = Paragraph::new(self.get_text())
             .block(
                 Block::default()
-                    .title(title)
+                    .title(self.get_title())
                     .borders(Borders::LEFT | Borders::TOP | Borders::RIGHT)
                     .border_type(BorderType::Rounded),
             )
