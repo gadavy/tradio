@@ -9,6 +9,8 @@ use sqlx::Row;
 
 use super::{Station, StationsFilter, Storage};
 
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
+
 pub struct Sqlite {
     pool: SqlitePool,
 }
@@ -16,27 +18,9 @@ pub struct Sqlite {
 impl Sqlite {
     pub async fn new(url: &str) -> anyhow::Result<Sqlite> {
         let opts = SqliteConnectOptions::from_str(url)?.create_if_missing(true);
-
         let pool = SqlitePool::connect_with(opts).await?;
 
-        let migrations = vec![
-            r#"CREATE TABLE IF NOT EXISTS radio_stations (
-                id          INTEGER   NOT NULL PRIMARY KEY AUTOINCREMENT,
-                created_at  TIMESTAMP NOT NULL,
-                updated_at  TIMESTAMP NOT NULL,
-                external_id TEXT      UNIQUE,
-                name        TEXT      NOT NULL,
-                url         TEXT      NOT NULL,
-                codec       TEXT      NOT NULL,
-                bitrate     INTEGER   NOT NULL,
-                tags        TEXT      NOT NULL,
-                country     TEXT      NOT NULL
-            );"#,
-        ];
-
-        for migration in migrations {
-            sqlx::query(migration).execute(&pool).await?;
-        }
+        MIGRATOR.run(&pool).await?;
 
         Ok(Self { pool })
     }
