@@ -23,7 +23,7 @@ use crate::ui::components::Library;
 
 mod components;
 
-#[derive(PartialEq)]
+#[derive(Eq, PartialEq)]
 pub enum ActiveLayout {
     Library,
     Devices,
@@ -32,12 +32,10 @@ pub enum ActiveLayout {
 pub struct Ui<'a, P, S, C>
 where
     P: Player,
-    S: Storage + Clone,
-    C: Client + Clone,
+    S: Storage,
+    C: Client,
 {
     player: P,
-    storage: S,
-    client: C,
 
     active_layout: ActiveLayout,
 
@@ -49,11 +47,11 @@ where
 impl<'a, P, S, C> Ui<'a, P, S, C>
 where
     P: Player,
-    S: Storage + Clone,
-    C: Client + Clone,
+    S: Storage,
+    C: Client,
 {
     pub fn new(player: P, storage: S, client: C) -> Self {
-        let library = Library::new(storage.clone(), client.clone());
+        let library = Library::new(storage, client);
 
         let devices = Table::<Device>::new(
             vec![],
@@ -91,8 +89,6 @@ where
 
         Self {
             player,
-            storage,
-            client,
             active_layout: ActiveLayout::Library,
             library,
             devices,

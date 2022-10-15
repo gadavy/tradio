@@ -10,6 +10,7 @@ use crate::models::{OrderBy, Station, StationsFilter};
 use super::Client;
 
 const APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+const RADIO_BROWSER_NAME: &str = "radio-browser";
 
 #[derive(Debug, Clone)]
 pub struct RadioBrowser {
@@ -56,6 +57,8 @@ impl RadioBrowser {
         if let Some(order_by) = filter.order_by.as_ref().map(|s| s.into()) {
             path.push_str("&order=");
             path.push_str(order_by);
+        } else {
+            path.push_str("&order=clicktrend") // TODO: remove later.
         }
 
         path
@@ -97,7 +100,8 @@ impl From<RadioStation> for Station {
     fn from(value: RadioStation) -> Self {
         Self {
             id: 0,
-            external_id: Some(value.uuid),
+            provider: RADIO_BROWSER_NAME.to_string(),
+            provider_id: value.uuid,
             name: value.name,
             url: value.url,
             codec: value.codec,

@@ -6,7 +6,7 @@ use crate::models::{Station, StationsFilter};
 
 mod sqlite;
 
-pub trait Storage {
+pub trait Storage: Sync + Send {
     /// Store new `Station` to database and returns id.
     fn create(&self, station: &Station) -> BoxFuture<anyhow::Result<i64>>;
 

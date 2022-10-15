@@ -1,9 +1,8 @@
 use super::Table;
 use crate::api::Client;
-use crate::models::{Station, StationsFilter};
+use crate::models::{OrderBy, Station, StationsFilter};
 use crate::storage::Storage;
 use crate::ui::components::{Component, Styles};
-use std::sync::atomic::{AtomicU32, Ordering};
 use tui::backend::Backend;
 use tui::layout::{Constraint, Rect};
 use tui::style::{Color, Modifier, Style};
@@ -11,11 +10,21 @@ use tui::text::Span;
 use tui::widgets::{Block, BorderType, Borders, Cell, Row};
 use tui::Frame;
 
-#[derive(PartialEq)]
-enum Selected {
+#[derive(Eq, PartialEq)]
+enum Datasource {
     Storage,
     Client,
     None,
+}
+
+impl ToString for Datasource {
+    fn to_string(&self) -> String {
+        match self {
+            Datasource::Storage => "📁 storage".to_string(),
+            Datasource::Client => "🌐 radio-browser".to_string(),
+            Datasource::None => "".to_string(),
+        }
+    }
 }
 
 pub struct Library<'a, S, C>
@@ -25,10 +34,10 @@ where
 {
     storage: S,
     client: C,
-    rows: AtomicU32,
 
-    selected: Selected,
-    datasource_table: Table<'a, String>,
+    filter: StationsFilter,
+    datasource: Datasource,
+    datasource_table: Table<'a, Datasource>,
     storage_table: Table<'a, Station>,
     client_table: Table<'a, Station>,
 }
@@ -54,12 +63,14 @@ where
             widths: Some(&[Constraint::Percentage(100)]),
         };
 
-        let datasource_table = Table::<String>::new(
-            vec!["storage".to_string(), "radio-browser".to_string()],
-            |s| Row::new(vec![Cell::from(Span::raw(s))]),
+        let mut datasource_table = Table::<Datasource>::new(
+            vec![Datasource::Storage, Datasource::Client],
+            |s| Row::new(vec![Cell::from(Span::raw(s.to_string()))]),
             styles.clone(),
         )
         .with_state();
+
+        datasource_table.set_selected(Some(0));
 
         styles.block = Some(
             Block::default()
@@ -112,8 +123,12 @@ where
         Self {
             storage,
             client,
-            rows: AtomicU32::default(),
-            selected: Selected::None,
+            filter: StationsFilter {
+                order_by: Some(OrderBy::CreatedAt),
+                limit: None,
+                offset: None,
+            },
+            datasource: Datasource::None,
             datasource_table,
             storage_table,
             client_table,
@@ -121,45 +136,45 @@ where
     }
 
     pub fn handle_up(&mut self) {
-        match self.selected {
-            Selected::Storage => self.storage_table.handle_up(),
-            Selected::Client => self.client_table.handle_up(),
-            Selected::None => self.datasource_table.handle_up(),
+        match self.datasource {
+            Datasource::Storage => self.storage_table.handle_up(),
+            Datasource::Client => self.client_table.handle_up(),
+            Datasource::None => self.datasource_table.handle_up(),
         }
     }
 
     pub fn handle_down(&mut self) {
-        match self.selected {
-            Selected::Storage => self.storage_table.handle_down(),
-            Selected::Client => self.client_table.handle_down(),
-            Selected::None => self.datasource_table.handle_down(),
+        match self.datasource {
+            Datasource::Storage => self.storage_table.handle_down(),
+            Datasource::Client => self.client_table.handle_down(),
+            Datasource::None => self.datasource_table.handle_down(),
         }
     }
 
     pub fn handle_left(&mut self) {
-        match self.selected {
-            Selected::Storage | Selected::Client => self.selected = Selected::None,
+        match self.datasource {
+            Datasource::Storage | Datasource::Client => self.datasource = Datasource::None,
             _ => {}
         }
     }
 
     pub async fn handle_right(&mut self) -> anyhow::Result<()> {
-        if self.selected != Selected::None {
+        if self.datasource != Datasource::None {
             return Ok(());
         }
 
-        match self.datasource_table.get_selected().map(|s| s.as_str()) {
-            Some("storage") => {
-                let stations = self.storage.search(&StationsFilter::default()).await?;
+        match self.datasource_table.get_selected() {
+            Some(Datasource::Storage) => {
+                let stations = self.storage.search(&self.filter).await?;
 
                 self.storage_table.set_list(stations);
-                self.selected = Selected::Storage;
+                self.datasource = Datasource::Storage;
             }
-            Some("radio-browser") => {
-                let stations = self.client.search(&StationsFilter::default()).await?;
+            Some(Datasource::Client) => {
+                let stations = self.client.search(&self.filter).await?;
 
                 self.client_table.set_list(stations);
-                self.selected = Selected::Client;
+                self.datasource = Datasource::Client;
             }
             _ => {}
         }
@@ -168,7 +183,7 @@ where
     }
 
     pub async fn handle_save(&mut self) -> anyhow::Result<()> {
-        if self.selected != Selected::Client {
+        if self.datasource != Datasource::Client {
             return Ok(());
         }
 
@@ -180,7 +195,7 @@ where
     }
 
     pub async fn handle_delete(&mut self) -> anyhow::Result<()> {
-        if self.selected != Selected::Storage {
+        if self.datasource != Datasource::Storage {
             return Ok(());
         }
 
@@ -196,10 +211,10 @@ where
     }
 
     pub fn get_selected(&self) -> Option<&Station> {
-        match self.selected {
-            Selected::Storage => self.storage_table.get_selected(),
-            Selected::Client => self.client_table.get_selected(),
-            Selected::None => None,
+        match self.datasource {
+            Datasource::Storage => self.storage_table.get_selected(),
+            Datasource::Client => self.client_table.get_selected(),
+            Datasource::None => None,
         }
     }
 }
@@ -210,14 +225,10 @@ where
     C: Client,
 {
     fn draw<B: Backend>(&self, frame: &mut Frame<B>, area: Rect) {
-        match self.selected {
-            Selected::Storage => self.storage_table.draw(frame, area),
-            Selected::Client => self.client_table.draw(frame, area),
-            Selected::None => self.datasource_table.draw(frame, area),
+        match self.datasource {
+            Datasource::Storage => self.storage_table.draw(frame, area),
+            Datasource::Client => self.client_table.draw(frame, area),
+            Datasource::None => self.datasource_table.draw(frame, area),
         }
-    }
-
-    fn on_resize(&self, _columns: u16, rows: u16) {
-        self.rows.store(rows as u32, Ordering::SeqCst)
     }
 }

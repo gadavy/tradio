@@ -29,11 +29,14 @@ impl Sqlite {
 
 impl Storage for Sqlite {
     fn create(&self, station: &Station) -> BoxFuture<anyhow::Result<i64>> {
+        let time = DateTime::<Utc>::from(SystemTime::now());
+
         let query = sqlx::query(
             r#"INSERT INTO radio_stations (
             created_at,
             updated_at,
-            external_id,
+            provider,
+            provider_id,
             name,
             url,
             codec,
@@ -49,12 +52,14 @@ impl Storage for Sqlite {
             ?6,
             ?7,
             ?8,
-            ?9
+            ?9,
+            ?10
         ) RETURNING id"#,
         )
-        .bind(DateTime::<Utc>::from(SystemTime::now()))
-        .bind(DateTime::<Utc>::from(SystemTime::now()))
-        .bind(station.external_id.clone())
+        .bind(time)
+        .bind(time)
+        .bind(station.provider.clone())
+        .bind(station.provider_id.clone())
         .bind(station.name.clone())
         .bind(station.url.clone())
         .bind(station.codec.clone())
@@ -75,9 +80,8 @@ impl Storage for Sqlite {
         let query = sqlx::query(
             r#"SELECT
                 id,
-                created_at,
-                updated_at,
-                external_id,
+                provider,
+                provider_id,
                 name,
                 url,
                 codec,
@@ -97,7 +101,8 @@ impl Storage for Sqlite {
             while let Some(row) = rows.try_next().await? {
                 result.push(Station {
                     id: row.try_get("id")?,
-                    external_id: row.try_get("external_id")?,
+                    provider: row.try_get("provider")?,
+                    provider_id: row.try_get("provider_id")?,
                     name: row.try_get("name")?,
                     url: row.try_get("url")?,
                     codec: row.try_get("codec")?,
@@ -115,17 +120,19 @@ impl Storage for Sqlite {
         let query = sqlx::query(
             r#"UPDATE radio_stations SET
                 updated_at = ?1,
-                external_id = ?2,
-                name = ?3,
-                url = ?4,
-                codec = ?5,
-                bitrate = ?6,
-                tags = ?7,
-                country = ?8
-            WHERE id = ?9"#,
+                provider = ?2,
+                provider_id = ?3,
+                name = ?4,
+                url = ?5,
+                codec = ?6,
+                bitrate = ?7,
+                tags = ?8,
+                country = ?9
+            WHERE id = ?10"#,
         )
         .bind(DateTime::<Utc>::from(SystemTime::now()))
-        .bind(station.external_id.clone())
+        .bind(station.provider.clone())
+        .bind(station.provider_id.clone())
         .bind(station.name.to_string())
         .bind(station.url.to_string())
         .bind(station.codec.to_string())
@@ -165,7 +172,7 @@ mod tests {
     #[tokio::test]
     async fn create() {
         let db = Sqlite::new(":memory:").await.unwrap();
-        let stations = vec![new_station(1, true), new_station(2, false)];
+        let stations = vec![new_station(1), new_station(2)];
 
         for station in stations {
             db.create(&station).await.unwrap();
@@ -175,7 +182,7 @@ mod tests {
     #[tokio::test]
     async fn update() {
         let db = Sqlite::new(":memory:").await.unwrap();
-        let stations = vec![new_station(1, true), new_station(2, false)];
+        let stations = vec![new_station(1), new_station(2)];
 
         for station in stations {
             db.create(&station).await.unwrap();
@@ -185,28 +192,28 @@ mod tests {
     #[tokio::test]
     async fn crud() {
         let db = Sqlite::new(":memory:").await.unwrap();
-        let mut station = new_station(1, true);
+        let mut station = new_station(1);
 
         station.id = db.create(&station).await.unwrap();
         assert_eq!(station.id, 1);
 
-        let stations = db.search(StationsFilter::default()).await.unwrap();
+        let stations = db.search(&StationsFilter::default()).await.unwrap();
         assert_eq!(stations, vec![station.clone()]);
 
-        let new_station = new_station(1, true);
+        let new_station = new_station(1);
 
         db.update(&new_station).await.unwrap();
 
-        let stations = db.search(StationsFilter::default()).await.unwrap();
+        let stations = db.search(&StationsFilter::default()).await.unwrap();
         assert_eq!(stations, vec![new_station.clone()]);
 
         db.delete(station.id).await.unwrap();
 
-        let stations = db.search(StationsFilter::default()).await.unwrap();
+        let stations = db.search(&StationsFilter::default()).await.unwrap();
         assert_eq!(stations, vec![]);
     }
 
-    fn new_station(id: i64, with_external_id: bool) -> Station {
+    fn new_station(id: i64) -> Station {
         let now_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -214,7 +221,8 @@ mod tests {
 
         Station {
             id,
-            external_id: with_external_id.then(|| format!("{}", id)),
+            provider: format!("provider_{}", id),
+            provider_id: format!("provider_id_{}", id),
             name: format!("name_{}_{}", now_secs, id),
             url: format!("url_{}_{}", now_secs, id),
             codec: format!("codec_{}_{}", now_secs, id),

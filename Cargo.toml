@@ -16,7 +16,7 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
 anyhow = "1.0"
-tokio = { version = "1.20", features = ["full"] }
+tokio = { version = "1.21", features = ["full"] }
 symphonia = { version = "0.5", features = ["mp3", "aac"] }
 rodio = { version = "0.16", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
@@ -28,7 +28,6 @@ sqlx = { version = "0.6", features = ["sqlite", "runtime-tokio-native-tls", "chr
 # ui utils.
 crossterm = { version = "0.25", features = ["event-stream"] }
 tui = { version = "0.19", features = ["crossterm"], default-features = false }
-unicode-width = "0.1"
 
 # TODO: remove.
 log = "0.4"

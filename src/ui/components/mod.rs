@@ -14,8 +14,6 @@ mod table;
 
 pub trait Component {
     fn draw<B: Backend>(&self, frame: &mut Frame<B>, area: Rect);
-
-    fn on_resize(&self, _columns: u16, _rows: u16) {}
 }
 
 #[derive(Clone, Debug)]

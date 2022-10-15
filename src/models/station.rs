@@ -3,7 +3,8 @@ use std::ops::{Deref, DerefMut};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Station {
     pub id: i64,
-    pub external_id: Option<String>,
+    pub provider: String,
+    pub provider_id: String,
     pub name: String,
     pub url: String,
     pub codec: String,
