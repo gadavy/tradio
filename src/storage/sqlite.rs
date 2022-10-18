@@ -5,7 +5,7 @@ use futures::future::BoxFuture;
 use futures::TryStreamExt;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use sqlx::types::chrono::{DateTime, Utc};
-use sqlx::Row;
+use sqlx::{ConnectOptions, Row};
 
 use super::{Station, StationsFilter, Storage};
 
@@ -18,7 +18,9 @@ pub struct Sqlite {
 
 impl Sqlite {
     pub async fn new(url: &str) -> anyhow::Result<Sqlite> {
-        let opts = SqliteConnectOptions::from_str(url)?.create_if_missing(true);
+        let mut opts = SqliteConnectOptions::from_str(url)?.create_if_missing(true);
+        opts.log_statements(log::LevelFilter::Trace);
+
         let pool = SqlitePool::connect_with(opts).await?;
 
         MIGRATOR.run(&pool).await?;
