@@ -1,8 +1,6 @@
-use super::Table;
-use crate::api::Client;
-use crate::models::{OrderBy, Station, StationsFilter};
-use crate::storage::Storage;
-use crate::ui::components::{Component, Styles};
+use anyhow::Context;
+
+use futures::future::BoxFuture;
 use tui::backend::Backend;
 use tui::layout::{Constraint, Rect};
 use tui::style::{Color, Modifier, Style};
@@ -10,82 +8,51 @@ use tui::text::Span;
 use tui::widgets::{Block, BorderType, Borders, Cell, Row};
 use tui::Frame;
 
-#[derive(Eq, PartialEq)]
-enum Datasource {
-    Storage,
-    Client,
-    None,
-}
+use crate::api::Client;
+use crate::models::{Station, StationsFilter};
+use crate::storage::Storage;
 
-impl ToString for Datasource {
-    fn to_string(&self) -> String {
-        match self {
-            Datasource::Storage => "📁 storage".to_string(),
-            Datasource::Client => "🌐 radio-browser".to_string(),
-            Datasource::None => "".to_string(),
-        }
-    }
-}
+use super::{Component, Styles, Table};
 
-pub struct Library<'a, S, C>
-where
-    S: Storage,
-    C: Client,
-{
+pub struct Library<'a, S: Storage> {
     storage: S,
-    client: C,
+    datasource_table: Table<'a, Datasource<S>>,
+    datasource_is_active: bool,
 
-    filter: StationsFilter,
-    datasource: Datasource,
-    datasource_table: Table<'a, Datasource>,
-    storage_table: Table<'a, Station>,
-    client_table: Table<'a, Station>,
+    station_table: Table<'a, Station>,
+    station_filter: StationsFilter,
 }
 
-impl<'a, S, C> Library<'a, S, C>
-where
-    S: Storage,
-    C: Client,
-{
-    pub fn new(storage: S, client: C) -> Self {
-        let mut styles = Styles {
-            block: Some(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .title("Library"),
-            ),
-            highlight_style: Some(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            widths: Some(&[Constraint::Percentage(100)]),
-        };
+impl<'a, S: Storage> Library<'a, S> {
+    pub fn new<T>(storage: S, clients: T) -> Self
+    where
+        S: Clone,
+        T: IntoIterator<Item = Box<dyn Client>>,
+    {
+        let mut datasource_list = vec![Datasource::Storage(storage.clone())];
+        datasource_list.append(&mut clients.into_iter().map(|c| Datasource::Client(c)).collect());
 
-        let mut datasource_table = Table::<Datasource>::new(
-            vec![Datasource::Storage, Datasource::Client],
-            |s| Row::new(vec![Cell::from(Span::raw(s.to_string()))]),
-            styles.clone(),
+        let datasource_table = Table::<Datasource<_>>::new(
+            datasource_list,
+            |d| Row::new(vec![Cell::from(Span::raw(d.name()))]),
+            Styles {
+                block: Some(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .title("Library"),
+                ),
+                highlight_style: Some(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                widths: Some(&[Constraint::Percentage(100)]),
+            },
         )
         .with_state();
 
-        datasource_table.set_selected(Some(0));
-
-        styles.block = Some(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title("Library [storage]"),
-        );
-        styles.widths = Some(&[
-            Constraint::Percentage(60),
-            Constraint::Percentage(20),
-            Constraint::Percentage(10),
-            Constraint::Percentage(10),
-        ]);
-
-        let storage_table = Table::<Station>::new(
+        let station_table = Table::<Station>::new(
             vec![],
             |s| {
                 Row::new(vec![
@@ -95,99 +62,61 @@ where
                     Cell::from(Span::raw(s.bitrate.to_string())),
                 ])
             },
-            styles.clone(),
-        )
-        .with_state();
-
-        styles.block = Some(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title("Library [radio-browser]"),
-        );
-
-        let client_table = Table::<Station>::new(
-            vec![],
-            |s| {
-                Row::new(vec![
-                    Cell::from(Span::raw(format!("🔈 {}", s.name.trim()))),
-                    Cell::from(Span::raw(s.country.as_str())),
-                    Cell::from(Span::raw(s.codec.as_str())),
-                    Cell::from(Span::raw(s.bitrate.to_string())),
-                ])
-            },
-            styles.clone(),
+            Styles::default(),
         )
         .with_state();
 
         Self {
             storage,
-            client,
-            filter: StationsFilter {
-                order_by: Some(OrderBy::CreatedAt),
-                limit: None,
-                offset: None,
-            },
-            datasource: Datasource::None,
             datasource_table,
-            storage_table,
-            client_table,
+            datasource_is_active: false,
+            station_table,
+            station_filter: StationsFilter::default(),
         }
     }
 
-    pub fn handle_up(&mut self) {
-        match self.datasource {
-            Datasource::Storage => self.storage_table.handle_up(),
-            Datasource::Client => self.client_table.handle_up(),
-            Datasource::None => self.datasource_table.handle_up(),
+    pub async fn handle_up(&mut self) {
+        if self.datasource_is_active {
+            self.station_table.handle_up()
+        } else {
+            self.datasource_table.handle_up()
         }
     }
 
-    pub fn handle_down(&mut self) {
-        match self.datasource {
-            Datasource::Storage => self.storage_table.handle_down(),
-            Datasource::Client => self.client_table.handle_down(),
-            Datasource::None => self.datasource_table.handle_down(),
+    pub async fn handle_down(&mut self) {
+        if self.datasource_is_active {
+            self.station_table.handle_down()
+        } else {
+            self.datasource_table.handle_down()
         }
     }
 
-    pub fn handle_left(&mut self) {
-        match self.datasource {
-            Datasource::Storage | Datasource::Client => self.datasource = Datasource::None,
-            _ => {}
+    pub async fn handle_left(&mut self) {
+        if self.datasource_is_active {
+            self.station_table.set_list(vec![]);
+            self.datasource_is_active = false;
         }
     }
 
     pub async fn handle_right(&mut self) -> anyhow::Result<()> {
-        if self.datasource != Datasource::None {
+        if self.datasource_is_active {
             return Ok(());
         }
 
-        match self.datasource_table.get_selected() {
-            Some(Datasource::Storage) => {
-                let stations = self.storage.search(&self.filter).await?;
+        if let Some(datasource) = self.datasource_table.get_selected() {
+            let stations = datasource.search(&self.station_filter).await?;
 
-                self.storage_table.set_list(stations);
-                self.datasource = Datasource::Storage;
-            }
-            Some(Datasource::Client) => {
-                let stations = self.client.search(&self.filter).await?;
-
-                self.client_table.set_list(stations);
-                self.datasource = Datasource::Client;
-            }
-            _ => {}
+            self.station_table.set_list(stations);
+            self.datasource_is_active = true;
         }
 
         Ok(())
     }
 
     pub async fn handle_save(&mut self) -> anyhow::Result<()> {
-        if self.datasource != Datasource::Client {
-            return Ok(());
-        }
+        if self.datasource_is_active {
+            let station = self.station_table.get_selected().context("not selected")?;
 
-        if let Some(station) = self.client_table.get_selected() {
             self.storage.create(station).await?;
         }
 
@@ -195,40 +124,88 @@ where
     }
 
     pub async fn handle_delete(&mut self) -> anyhow::Result<()> {
-        if self.datasource != Datasource::Storage {
-            return Ok(());
-        }
+        if self.datasource_is_active {
+            let station = self.station_table.get_selected().context("not selected")?;
 
-        if let Some(station) = self.storage_table.get_selected() {
             self.storage.delete(station.id).await?;
-
-            // reload stations list.
-            let stations = self.storage.search(&StationsFilter::default()).await?;
-            self.storage_table.set_list(stations);
         }
 
         Ok(())
     }
 
     pub fn get_selected(&self) -> Option<&Station> {
-        match self.datasource {
-            Datasource::Storage => self.storage_table.get_selected(),
-            Datasource::Client => self.client_table.get_selected(),
-            Datasource::None => None,
+        if self.datasource_is_active {
+            self.station_table.get_selected()
+        } else {
+            None
         }
+    }
+
+    fn draw_stations<B: Backend>(&self, frame: &mut Frame<B>, area: Rect) {
+        let rows = self.station_table.build_rows();
+
+        let title = format!(
+            "Library [{}]",
+            self.datasource_table
+                .get_selected()
+                .expect("can't be none")
+                .name()
+        );
+
+        let table = tui::widgets::Table::new(rows)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(title),
+            )
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .widths(&[
+                Constraint::Percentage(60),
+                Constraint::Percentage(20),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+            ]);
+
+        frame.render_stateful_widget(
+            table,
+            area,
+            &mut self.station_table.get_state().expect("state can't be none"),
+        )
     }
 }
 
-impl<'a, S, C> Component for Library<'a, S, C>
-where
-    S: Storage,
-    C: Client,
-{
+impl<'a, S: Storage> Component for Library<'a, S> {
     fn draw<B: Backend>(&self, frame: &mut Frame<B>, area: Rect) {
-        match self.datasource {
-            Datasource::Storage => self.storage_table.draw(frame, area),
-            Datasource::Client => self.client_table.draw(frame, area),
-            Datasource::None => self.datasource_table.draw(frame, area),
+        if self.datasource_is_active {
+            self.draw_stations(frame, area)
+        } else {
+            self.datasource_table.draw(frame, area)
+        };
+    }
+}
+
+enum Datasource<S: Storage> {
+    Storage(S),
+    Client(Box<dyn Client>),
+}
+
+impl<S: Storage> Datasource<S> {
+    fn name(&self) -> String {
+        match self {
+            Datasource::Storage(_) => "📁 storage".to_string(),
+            Datasource::Client(c) => format!("🌐 {}", c.name()),
+        }
+    }
+
+    fn search(&self, filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>> {
+        match self {
+            Datasource::Storage(v) => v.search(filter),
+            Datasource::Client(v) => v.search(filter),
         }
     }
 }

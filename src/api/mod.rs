@@ -7,5 +7,7 @@ use crate::models::{Station, StationsFilter};
 mod radio_browser;
 
 pub trait Client: Sync + Send {
+    fn name(&self) -> &str;
+
     fn search(&self, filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>>;
 }

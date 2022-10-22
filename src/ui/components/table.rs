@@ -29,15 +29,12 @@ impl<'a, T> Table<'a, T> {
     }
 
     pub fn with_state(mut self) -> Self {
-        self.state = Some(TableState::default());
+        let mut state = TableState::default();
+        state.select(Some(0));
+
+        self.state = Some(state);
 
         self
-    }
-
-    pub fn set_selected(&mut self, index: Option<usize>) {
-        if let Some(ref mut state) = self.state {
-            state.select(index)
-        }
     }
 
     pub fn set_list(&mut self, list: Vec<T>) {
@@ -78,6 +75,10 @@ impl<'a, T> Table<'a, T> {
         } else {
             None
         }
+    }
+
+    pub fn get_state(&self) -> Option<TableState> {
+        self.state.clone()
     }
 
     pub(super) fn build_rows(&self) -> Vec<Row> {

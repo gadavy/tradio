@@ -1,3 +1,4 @@
+use crate::api::Client;
 use anyhow::Context;
 use clap::Parser;
 use log::LevelFilter;
@@ -41,7 +42,9 @@ async fn main() -> anyhow::Result<()> {
 
     let player = player::Rodio::default()?;
     let storage = storage::Sqlite::new(&opt.db_path).await?;
-    let client = api::RadioBrowser::new(&opt.radio_browser_url);
 
-    ui::Ui::new(player, storage, client).start().await
+    let clients: Vec<Box<dyn Client>> =
+        vec![Box::new(api::RadioBrowser::new(&opt.radio_browser_url))];
+
+    ui::Ui::new(player, storage, clients).start().await
 }

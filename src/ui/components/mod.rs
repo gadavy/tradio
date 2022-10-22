@@ -14,9 +14,11 @@ mod table;
 
 pub trait Component {
     fn draw<B: Backend>(&self, frame: &mut Frame<B>, area: Rect);
+
+    fn on_resize(&mut self, _area: Rect) {}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct Styles<'a> {
     pub block: Option<Block<'a>>,
     pub highlight_style: Option<Style>,

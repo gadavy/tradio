@@ -66,6 +66,10 @@ impl RadioBrowser {
 }
 
 impl Client for RadioBrowser {
+    fn name(&self) -> &str {
+        RADIO_BROWSER_NAME
+    }
+
     fn search(&self, filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>> {
         let addr = self.addr.clone();
         let path = self.search_path(filter);

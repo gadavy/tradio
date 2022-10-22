@@ -29,29 +29,30 @@ pub enum ActiveLayout {
     Devices,
 }
 
-pub struct Ui<'a, P, S, C>
+pub struct Ui<'a, P, S>
 where
     P: Player,
-    S: Storage,
-    C: Client,
+    S: Storage + Clone,
 {
     player: P,
 
     active_layout: ActiveLayout,
 
-    library: Library<'a, S, C>,
+    library: Library<'a, S>,
     devices: Table<'a, Device>,
     playbar: Playbar,
 }
 
-impl<'a, P, S, C> Ui<'a, P, S, C>
+impl<'a, P, S> Ui<'a, P, S>
 where
     P: Player,
-    S: Storage,
-    C: Client,
+    S: Storage + Clone,
 {
-    pub fn new(player: P, storage: S, client: C) -> Self {
-        let library = Library::new(storage, client);
+    pub fn new<C>(player: P, storage: S, clients: C) -> Self
+    where
+        C: IntoIterator<Item = Box<dyn Client>>,
+    {
+        let library = Library::new(storage, clients);
 
         let devices = Table::<Device>::new(
             vec![],
@@ -157,9 +158,9 @@ where
             KeyCode::F(5) => self.handle_refresh().await?,
             KeyCode::Char('+' | '=') => self.player.set_volume(self.player.volume() + 5),
             KeyCode::Char('-') => self.player.set_volume(self.player.volume() - 5),
-            KeyCode::Up => self.handle_up(),
-            KeyCode::Down => self.handle_down(),
-            KeyCode::Left => self.handle_left(),
+            KeyCode::Up => self.handle_up().await,
+            KeyCode::Down => self.handle_down().await,
+            KeyCode::Left => self.handle_left().await,
             KeyCode::Right => self.handle_right().await?,
             KeyCode::Enter => self.handle_enter()?,
             KeyCode::Char('p' | 'з') => self.handle_pause(),
@@ -218,23 +219,23 @@ where
         }
     }
 
-    fn handle_up(&mut self) {
+    async fn handle_up(&mut self) {
         match self.active_layout {
-            ActiveLayout::Library => self.library.handle_up(),
+            ActiveLayout::Library => self.library.handle_up().await,
             ActiveLayout::Devices => self.devices.handle_up(),
         };
     }
 
-    fn handle_down(&mut self) {
+    async fn handle_down(&mut self) {
         match self.active_layout {
-            ActiveLayout::Library => self.library.handle_down(),
+            ActiveLayout::Library => self.library.handle_down().await,
             ActiveLayout::Devices => self.devices.handle_down(),
         };
     }
 
-    fn handle_left(&mut self) {
+    async fn handle_left(&mut self) {
         if self.active_layout == ActiveLayout::Library {
-            self.library.handle_left()
+            self.library.handle_left().await
         };
     }
 
