@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use futures::future::BoxFuture;
 use futures::TryStreamExt;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
+use sqlx::sqlite::{SqliteAutoVacuum, SqliteConnectOptions, SqlitePool};
 use sqlx::types::chrono::{DateTime, Utc};
 use sqlx::{ConnectOptions, Row};
 
@@ -18,7 +18,10 @@ pub struct Sqlite {
 
 impl Sqlite {
     pub async fn new(url: &str) -> anyhow::Result<Sqlite> {
-        let mut opts = SqliteConnectOptions::from_str(url)?.create_if_missing(true);
+        let mut opts = SqliteConnectOptions::from_str(url)?
+            .create_if_missing(true)
+            .auto_vacuum(SqliteAutoVacuum::Full);
+
         opts.log_statements(log::LevelFilter::Trace);
 
         let pool = SqlitePool::connect_with(opts).await?;
@@ -228,7 +231,7 @@ mod tests {
             name: format!("name_{}_{}", now_secs, id),
             url: format!("url_{}_{}", now_secs, id),
             codec: format!("codec_{}_{}", now_secs, id),
-            bitrate: id as u32,
+            bitrate: id.try_into().expect("unexpected u32 overflow"),
             tags: "a,b,c,d,e,f".into(),
             country: format!("country_{}_{}", now_secs, id),
         }
