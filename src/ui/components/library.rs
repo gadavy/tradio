@@ -24,16 +24,12 @@ pub struct Library<'a, S: Storage> {
 }
 
 impl<'a, S: Storage> Library<'a, S> {
-    pub fn new<T>(storage: S, clients: T) -> Self
+    pub fn new(storage: S) -> Self
     where
         S: Clone,
-        T: IntoIterator<Item = Box<dyn Client>>,
     {
-        let mut datasource_list = vec![Datasource::Storage(storage.clone())];
-        datasource_list.append(&mut clients.into_iter().map(|c| Datasource::Client(c)).collect());
-
         let datasource_table = Table::<Datasource<_>>::new(
-            datasource_list,
+            vec![Datasource::Storage(storage.clone())],
             |d| Row::new(vec![Cell::from(Span::raw(d.name()))]),
             Styles {
                 block: Some(
@@ -75,7 +71,11 @@ impl<'a, S: Storage> Library<'a, S> {
         }
     }
 
-    pub async fn handle_up(&mut self) {
+    pub fn with_client(&mut self, client: Box<dyn Client>) {
+        self.datasource_table.push_item(Datasource::Client(client));
+    }
+
+    pub fn handle_up(&mut self) {
         if self.datasource_is_active {
             self.station_table.handle_up();
         } else {
@@ -83,7 +83,7 @@ impl<'a, S: Storage> Library<'a, S> {
         }
     }
 
-    pub async fn handle_down(&mut self) {
+    pub fn handle_down(&mut self) {
         if self.datasource_is_active {
             self.station_table.handle_down();
         } else {
@@ -91,7 +91,7 @@ impl<'a, S: Storage> Library<'a, S> {
         }
     }
 
-    pub async fn handle_left(&mut self) {
+    pub fn handle_left(&mut self) {
         if self.datasource_is_active {
             self.station_table.set_list(vec![]);
             self.datasource_is_active = false;

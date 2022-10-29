@@ -48,11 +48,8 @@ where
     P: Player,
     S: Storage + Clone,
 {
-    pub fn new<C>(player: P, storage: S, clients: C) -> Self
-    where
-        C: IntoIterator<Item = Box<dyn Client>>,
-    {
-        let library = Library::new(storage, clients);
+    pub fn new(player: P, storage: S) -> Self {
+        let library = Library::new(storage);
 
         let devices = Table::<Device>::new(
             vec![],
@@ -97,6 +94,12 @@ where
         }
     }
 
+    pub fn with_client(mut self, client: Box<dyn Client>) -> Self {
+        self.library.with_client(client);
+
+        self
+    }
+
     pub async fn start(&mut self) -> anyhow::Result<()> {
         setup_terminal()?;
 
@@ -104,7 +107,6 @@ where
         let mut terminal = Terminal::new(backend)?;
         terminal.hide_cursor().context("hide cursor")?;
 
-        self.update_stations().await?;
         self.update_devices()?;
 
         let mut reader = EventStream::new();
@@ -155,12 +157,12 @@ where
             KeyCode::Char('q' | 'й') => return Ok(false),
             KeyCode::F(1) => self.handle_set_layout(ActiveLayout::Library)?,
             KeyCode::F(2) => self.handle_set_layout(ActiveLayout::Devices)?,
-            KeyCode::F(5) => self.handle_refresh().await?,
+            KeyCode::F(5) => self.handle_refresh()?,
             KeyCode::Char('+' | '=') => self.player.set_volume(self.player.volume() + 5),
             KeyCode::Char('-') => self.player.set_volume(self.player.volume() - 5),
-            KeyCode::Up => self.handle_up().await,
-            KeyCode::Down => self.handle_down().await,
-            KeyCode::Left => self.handle_left().await,
+            KeyCode::Up => self.handle_up(),
+            KeyCode::Down => self.handle_down(),
+            KeyCode::Left => self.handle_left(),
             KeyCode::Right => self.handle_right().await?,
             KeyCode::Enter => self.handle_enter()?,
             KeyCode::Char('p' | 'з') => self.handle_pause(),
@@ -184,10 +186,9 @@ where
         Ok(())
     }
 
-    async fn handle_refresh(&mut self) -> anyhow::Result<()> {
-        match self.active_layout {
-            ActiveLayout::Library => self.update_stations().await?,
-            ActiveLayout::Devices => self.update_devices()?,
+    fn handle_refresh(&mut self) -> anyhow::Result<()> {
+        if self.active_layout == ActiveLayout::Devices {
+            self.update_devices()?;
         }
 
         Ok(())
@@ -219,23 +220,23 @@ where
         }
     }
 
-    async fn handle_up(&mut self) {
+    fn handle_up(&mut self) {
         match self.active_layout {
-            ActiveLayout::Library => self.library.handle_up().await,
+            ActiveLayout::Library => self.library.handle_up(),
             ActiveLayout::Devices => self.devices.handle_up(),
         };
     }
 
-    async fn handle_down(&mut self) {
+    fn handle_down(&mut self) {
         match self.active_layout {
-            ActiveLayout::Library => self.library.handle_down().await,
+            ActiveLayout::Library => self.library.handle_down(),
             ActiveLayout::Devices => self.devices.handle_down(),
         };
     }
 
-    async fn handle_left(&mut self) {
+    fn handle_left(&mut self) {
         if self.active_layout == ActiveLayout::Library {
-            self.library.handle_left().await;
+            self.library.handle_left();
         };
     }
 
@@ -243,13 +244,6 @@ where
         if self.active_layout == ActiveLayout::Library {
             self.library.handle_right().await?;
         };
-
-        Ok(())
-    }
-
-    async fn update_stations(&mut self) -> anyhow::Result<()> {
-        // let stations = self.client.search(&StationsFilter::default()).await?;
-        // self.library.set(stations);
 
         Ok(())
     }

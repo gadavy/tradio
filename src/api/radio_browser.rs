@@ -19,8 +19,13 @@ pub struct RadioBrowser {
 }
 
 impl RadioBrowser {
-    pub fn new(addr: &str) -> Self {
-        let addr = Arc::new(addr.to_string().parse().expect("invalid address"));
+    pub fn new() -> Self {
+        let addr = Arc::new(
+            "https://de1.api.radio-browser.info"
+                .parse()
+                .expect("invalid address"),
+        );
+
         let client = ClientBuilder::new()
             .user_agent(APP_USER_AGENT)
             .redirect(Policy::default())
@@ -41,7 +46,7 @@ impl RadioBrowser {
         res.json().await.context("unmarshal json")
     }
 
-    fn search_path(&self, filter: &StationsFilter) -> String {
+    fn search_path(filter: &StationsFilter) -> String {
         let mut path = "/json/stations/search?hidebroken=true&bitrateMin=320".to_string();
 
         if let Some(limit) = filter.limit {
@@ -54,11 +59,9 @@ impl RadioBrowser {
             path.push_str(&offset.to_string());
         }
 
-        if let Some(order_by) = filter.order_by.as_ref().map(|s| s.into()) {
+        if let Some(order_by) = filter.order_by.as_ref().map(Into::into) {
             path.push_str("&order=");
             path.push_str(order_by);
-        } else {
-            path.push_str("&order=clicktrend") // TODO: remove later.
         }
 
         path
@@ -72,7 +75,7 @@ impl Client for RadioBrowser {
 
     fn search(&self, filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>> {
         let addr = self.addr.clone();
-        let path = self.search_path(filter);
+        let path = Self::search_path(filter);
         let client = self.client.clone();
 
         Box::pin(async move {
