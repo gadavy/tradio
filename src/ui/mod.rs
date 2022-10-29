@@ -147,7 +147,7 @@ where
             ActiveLayout::Devices => self.devices.draw(f, layout[0]),
         }
 
-        self.playbar.draw(f, layout[1])
+        self.playbar.draw(f, layout[1]);
     }
 
     async fn handle_key(&mut self, event: KeyEvent) -> anyhow::Result<bool> {
@@ -176,7 +176,7 @@ where
 
     fn handle_set_layout(&mut self, layout: ActiveLayout) -> anyhow::Result<()> {
         if layout == ActiveLayout::Devices {
-            self.update_devices()?
+            self.update_devices()?;
         }
 
         self.active_layout = layout;
@@ -235,7 +235,7 @@ where
 
     async fn handle_left(&mut self) {
         if self.active_layout == ActiveLayout::Library {
-            self.library.handle_left().await
+            self.library.handle_left().await;
         };
     }
 

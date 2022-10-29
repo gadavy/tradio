@@ -33,7 +33,7 @@ impl Playbar {
     }
 
     pub fn set_station(&mut self, station: Option<&Station>) {
-        self.station = station.map(|s| s.name.trim().to_string())
+        self.station = station.map(|s| s.name.trim().to_string());
     }
 
     fn get_title(&self) -> String {

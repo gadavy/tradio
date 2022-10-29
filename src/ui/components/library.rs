@@ -77,17 +77,17 @@ impl<'a, S: Storage> Library<'a, S> {
 
     pub async fn handle_up(&mut self) {
         if self.datasource_is_active {
-            self.station_table.handle_up()
+            self.station_table.handle_up();
         } else {
-            self.datasource_table.handle_up()
+            self.datasource_table.handle_up();
         }
     }
 
     pub async fn handle_down(&mut self) {
         if self.datasource_is_active {
-            self.station_table.handle_down()
+            self.station_table.handle_down();
         } else {
-            self.datasource_table.handle_down()
+            self.datasource_table.handle_down();
         }
     }
 
@@ -175,16 +175,16 @@ impl<'a, S: Storage> Library<'a, S> {
             table,
             area,
             &mut self.station_table.get_state().expect("state can't be none"),
-        )
+        );
     }
 }
 
 impl<'a, S: Storage> Component for Library<'a, S> {
     fn draw<B: Backend>(&self, frame: &mut Frame<B>, area: Rect) {
         if self.datasource_is_active {
-            self.draw_stations(frame, area)
+            self.draw_stations(frame, area);
         } else {
-            self.datasource_table.draw(frame, area)
+            self.datasource_table.draw(frame, area);
         };
     }
 }
