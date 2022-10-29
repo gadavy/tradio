@@ -69,22 +69,22 @@ impl Symphonia {
 }
 
 impl Source for Symphonia {
-    #[inline]
     fn current_frame_len(&self) -> Option<usize> {
         Some(self.buffer.samples().len())
     }
 
-    #[inline]
     fn channels(&self) -> u16 {
-        self.spec.channels.count() as u16
+        self.spec
+            .channels
+            .count()
+            .try_into()
+            .expect("unexpected u16 overflow")
     }
 
-    #[inline]
     fn sample_rate(&self) -> u32 {
         self.spec.rate
     }
 
-    #[inline]
     fn total_duration(&self) -> Option<Duration> {
         None
     }

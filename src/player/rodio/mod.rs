@@ -65,10 +65,13 @@ impl Rodio {
     /// Builds new `RodioPlayer` beginning playback on a default output stream.
     pub fn default() -> anyhow::Result<Self> {
         let player = Self::new_idle();
+        let device = player
+            .devices()?
+            .into_iter()
+            .find(|d| d.is_default)
+            .context("can't find default device")?;
 
-        if let Some(device) = player.devices()?.into_iter().find(|d| d.is_default) {
-            player.use_device(&device)?;
-        }
+        player.use_device(&device)?;
 
         Ok(player)
     }
@@ -129,7 +132,8 @@ impl Player for Rodio {
     }
 
     fn set_volume(&self, volume: i8) {
-        self.sink.set_volume(volume.clamp(0, 100) as f32 / 100.0);
+        self.sink
+            .set_volume(f32::from(volume.clamp(0, 100)) / 100.0);
     }
 
     fn devices(&self) -> anyhow::Result<Vec<Device>> {
