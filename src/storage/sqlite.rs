@@ -187,11 +187,23 @@ mod tests {
     #[tokio::test]
     async fn update() {
         let db = Sqlite::new(":memory:").await.unwrap();
-        let stations = vec![new_station(1), new_station(2)];
+        let mut station = new_station(1);
 
-        for station in stations {
-            db.create(&station).await.unwrap();
-        }
+        db.create(&station).await.unwrap();
+
+        station.provider = "new_provider".to_string();
+        station.provider_id = "new_provider_id".to_string();
+        station.name = "new_name".to_string();
+        station.url = "new_url".to_string();
+        station.codec = "new_codec".to_string();
+        station.bitrate = 195;
+        station.tags = "tag1,tag2,tag3".into();
+        station.country = "new_country".to_string();
+
+        assert!(db.update(&station).await.is_ok());
+
+        let stored = db.search(&StationsFilter::default()).await.unwrap();
+        assert_eq!(stored, vec![station]);
     }
 
     #[tokio::test]

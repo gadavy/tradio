@@ -26,13 +26,13 @@ struct Opt {
 }
 
 impl Opt {
-    fn config_file(&self, filepath: &str) -> String {
+    fn default_filepath(name: &str) -> String {
         let dir = dirs::config_dir()
             .expect("failed to find os config dir")
             .join("tradio");
 
         fs::create_dir_all(&dir).expect("failed to create dir");
-        dir.join(filepath).to_str().unwrap().to_string()
+        dir.join(name).to_str().unwrap().to_string()
     }
 
     fn log_filepath(&self) -> String {
@@ -40,7 +40,7 @@ impl Opt {
             return path.clone();
         }
 
-        self.config_file("tradio.log")
+        Self::default_filepath("tradio.log")
     }
 
     fn db_filepath(&self) -> String {
@@ -48,7 +48,7 @@ impl Opt {
             return path.clone();
         }
 
-        self.config_file("sqlite.db")
+        Self::default_filepath("sqlite.db")
     }
 }
 
