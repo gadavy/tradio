@@ -1,6 +1,5 @@
 use anyhow::Context;
 
-use futures::future::BoxFuture;
 use tui::backend::Backend;
 use tui::layout::{Constraint, Rect};
 use tui::style::{Color, Modifier, Style};
@@ -14,22 +13,25 @@ use crate::storage::Storage;
 
 use super::{Component, Styles, Table};
 
-pub struct Library<'a, S: Storage> {
+pub struct Library<'a, S: Storage, C: Client> {
     storage: S,
-    datasource_table: Table<'a, Datasource<S>>,
+    datasource_table: Table<'a, Datasource<S, C>>,
     datasource_is_active: bool,
 
     station_table: Table<'a, Station>,
     station_filter: StationsFilter,
 }
 
-impl<'a, S: Storage> Library<'a, S> {
-    pub fn new(storage: S) -> Self
+impl<'a, S: Storage, C: Client> Library<'a, S, C> {
+    pub fn new(storage: S, client: C) -> Self
     where
         S: Clone,
     {
-        let datasource_table = Table::<Datasource<_>>::new(
-            vec![Datasource::Storage(storage.clone())],
+        let datasource_table = Table::new(
+            vec![
+                Datasource::Storage(storage.clone()),
+                Datasource::Client(client),
+            ],
             |d| Row::new(vec![Cell::from(Span::raw(d.name()))]),
             Styles {
                 block: Some(
@@ -69,10 +71,6 @@ impl<'a, S: Storage> Library<'a, S> {
             station_table,
             station_filter: StationsFilter::default(),
         }
-    }
-
-    pub fn with_client(&mut self, client: Box<dyn Client>) {
-        self.datasource_table.push_item(Datasource::Client(client));
     }
 
     pub fn handle_up(&mut self) {
@@ -179,7 +177,7 @@ impl<'a, S: Storage> Library<'a, S> {
     }
 }
 
-impl<'a, S: Storage> Component for Library<'a, S> {
+impl<'a, S: Storage, C: Client> Component for Library<'a, S, C> {
     fn draw<B: Backend>(&self, frame: &mut Frame<B>, area: Rect) {
         if self.datasource_is_active {
             self.draw_stations(frame, area);
@@ -189,12 +187,12 @@ impl<'a, S: Storage> Component for Library<'a, S> {
     }
 }
 
-enum Datasource<S: Storage> {
+enum Datasource<S: Storage, C: Client> {
     Storage(S),
-    Client(Box<dyn Client>),
+    Client(C),
 }
 
-impl<S: Storage> Datasource<S> {
+impl<S: Storage, C: Client> Datasource<S, C> {
     fn name(&self) -> String {
         match self {
             Datasource::Storage(_) => "📁 storage".to_string(),
@@ -202,10 +200,10 @@ impl<S: Storage> Datasource<S> {
         }
     }
 
-    fn search(&self, filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>> {
+    async fn search(&self, filter: &StationsFilter) -> anyhow::Result<Vec<Station>> {
         match self {
-            Datasource::Storage(v) => v.search(filter),
-            Datasource::Client(v) => v.search(filter),
+            Datasource::Storage(v) => v.search(filter).await,
+            Datasource::Client(v) => v.search(filter).await,
         }
     }
 }

@@ -45,10 +45,6 @@ impl<'a, T> Table<'a, T> {
         }
     }
 
-    pub fn push_item(&mut self, item: T) {
-        self.list.push(item);
-    }
-
     pub fn handle_up(&mut self) {
         if let Some(ref mut state) = self.state {
             let idx = state.selected().unwrap_or(0);

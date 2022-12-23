@@ -1,7 +1,5 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::{fmt, time::Duration};
 
 use anyhow::Context;
@@ -148,8 +146,8 @@ impl Player for Rodio {
             let id = device.name()?;
             let is_active = active_out.device.as_ref().map(Device::id) == Some(&id);
 
-            let is_default = if let Some(ref device) = default_device {
-                id == device.name()?
+            let is_default = if let Some(ref default) = default_device {
+                id == default.name()?
             } else {
                 false
             };

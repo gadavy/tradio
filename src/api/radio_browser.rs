@@ -1,30 +1,24 @@
-use std::sync::Arc;
-
-use anyhow::Context;
-use futures::future::BoxFuture;
 use reqwest::{redirect::Policy, ClientBuilder, Url};
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::Deserialize;
 
 use crate::models::{OrderBy, Station, StationsFilter};
 
 use super::Client;
 
 const APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
-const RADIO_BROWSER_NAME: &str = "radio-browser";
+const PROVIDER_NAME: &str = "radio-browser";
 
 #[derive(Debug, Clone)]
 pub struct RadioBrowser {
-    addr: Arc<Url>,
+    addr: Url,
     client: reqwest::Client,
 }
 
 impl RadioBrowser {
     pub fn new() -> Self {
-        let addr = Arc::new(
-            "https://de1.api.radio-browser.info"
-                .parse()
-                .expect("invalid address"),
-        );
+        let addr = "https://de1.api.radio-browser.info"
+            .parse()
+            .expect("invalid address");
 
         let client = ClientBuilder::new()
             .user_agent(APP_USER_AGENT)
@@ -35,59 +29,46 @@ impl RadioBrowser {
         Self { addr, client }
     }
 
-    async fn get<T: DeserializeOwned>(
-        client: reqwest::Client,
-        addr: Arc<Url>,
-        path: &str,
-    ) -> anyhow::Result<T> {
-        let uri = addr.join(path).context("build url")?;
-        let res = client.get(uri).send().await.context("get")?;
-
-        res.json().await.context("unmarshal json")
-    }
-
-    fn search_path(filter: &StationsFilter) -> String {
-        let mut path = "/json/stations/search?hidebroken=true&bitrateMin=320".to_string();
+    fn search_url(&self, filter: &StationsFilter) -> Url {
+        let mut url = self.addr.clone();
+        url.set_path("/json/stations/search");
+        url.query_pairs_mut().append_pair("hidebroken", "true");
 
         if let Some(limit) = filter.limit {
-            path.push_str("&limit=");
-            path.push_str(&limit.to_string());
+            url.query_pairs_mut()
+                .append_pair("limit", &limit.to_string().as_str());
         }
 
         if let Some(offset) = filter.offset {
-            path.push_str("&offset=");
-            path.push_str(&offset.to_string());
+            url.query_pairs_mut()
+                .append_pair("offset", &offset.to_string().as_str());
         }
 
-        if let Some(order_by) = filter.order_by.as_ref().map(Into::into) {
-            path.push_str("&order=");
-            path.push_str(order_by);
-        }
+        if let Some(order_by) = filter.order_by.as_ref() {
+            url.query_pairs_mut().append_pair("order", order_by.into());
+        };
 
-        path
+        url
     }
 }
 
 impl Client for RadioBrowser {
     fn name(&self) -> &str {
-        RADIO_BROWSER_NAME
+        PROVIDER_NAME
     }
 
-    fn search(&self, filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>> {
-        let addr = self.addr.clone();
-        let path = Self::search_path(filter);
-        let client = self.client.clone();
+    async fn search(&self, filter: &StationsFilter) -> anyhow::Result<Vec<Station>> {
+        let url = self.search_url(filter);
+        let resp = self.client.get(url).send().await?;
+        let data = resp.json::<Vec<RadioStation>>().await?;
 
-        Box::pin(async move {
-            let supported_codecs = ["MP3", "FLAC"];
-            let stations: Vec<RadioStation> = Self::get(client, addr, &path).await?;
+        let codecs = ["MP3", "FLAC"];
 
-            Ok(stations
-                .into_iter()
-                .filter(|s| supported_codecs.contains(&s.codec.as_str()))
-                .map(Station::from)
-                .collect())
-        })
+        Ok(data
+            .into_iter()
+            .filter(|s| codecs.contains(&s.codec.as_str()))
+            .map(Station::from)
+            .collect())
     }
 }
 
@@ -107,7 +88,7 @@ impl From<RadioStation> for Station {
     fn from(value: RadioStation) -> Self {
         Self {
             id: 0,
-            provider: RADIO_BROWSER_NAME.to_string(),
+            provider: PROVIDER_NAME.to_string(),
             provider_id: value.uuid,
             name: value.name,
             url: value.url,
@@ -123,6 +104,54 @@ impl From<&OrderBy> for &str {
     fn from(value: &OrderBy) -> Self {
         match value {
             OrderBy::CreatedAt => "",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OrderBy, RadioBrowser, StationsFilter};
+
+    #[test]
+    fn test_search_url() {
+        let rb = RadioBrowser::new();
+        let test_data = [
+            (
+                StationsFilter {
+                    order_by: None,
+                    limit: None,
+                    offset: None,
+                },
+                "hidebroken=true",
+            ),
+            (
+                StationsFilter {
+                    order_by: Some(OrderBy::CreatedAt),
+                    limit: None,
+                    offset: None,
+                },
+                "hidebroken=true&order=",
+            ),
+            (
+                StationsFilter {
+                    order_by: None,
+                    limit: Some(10),
+                    offset: None,
+                },
+                "hidebroken=true&limit=10",
+            ),
+            (
+                StationsFilter {
+                    order_by: None,
+                    limit: None,
+                    offset: Some(20),
+                },
+                "hidebroken=true&offset=20",
+            ),
+        ];
+
+        for (filter, want) in test_data {
+            assert_eq!(rb.search_url(&filter).query(), Some(want));
         }
     }
 }

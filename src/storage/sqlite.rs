@@ -1,7 +1,6 @@
 use std::str::FromStr;
 use std::time::SystemTime;
 
-use futures::future::BoxFuture;
 use futures::TryStreamExt;
 use sqlx::sqlite::{SqliteAutoVacuum, SqliteConnectOptions, SqlitePool};
 use sqlx::types::chrono::{DateTime, Utc};
@@ -33,10 +32,9 @@ impl Sqlite {
 }
 
 impl Storage for Sqlite {
-    fn create(&self, station: &Station) -> BoxFuture<anyhow::Result<i64>> {
-        let time = DateTime::<Utc>::from(SystemTime::now());
-
-        let query = sqlx::query(
+    async fn create(&self, station: &Station) -> anyhow::Result<i64> {
+        let now = DateTime::<Utc>::from(SystemTime::now());
+        let row = sqlx::query(
             r#"INSERT INTO radio_stations (
             created_at,
             updated_at,
@@ -61,28 +59,24 @@ impl Storage for Sqlite {
             ?10
         ) RETURNING id"#,
         )
-        .bind(time)
-        .bind(time)
-        .bind(station.provider.clone())
+        .bind(now)
+        .bind(now)
+        .bind(station.provider.clone()) // TODO: try remove clone
         .bind(station.provider_id.clone())
         .bind(station.name.clone())
         .bind(station.url.clone())
         .bind(station.codec.clone())
         .bind(station.bitrate)
         .bind(station.tags.to_string())
-        .bind(station.country.clone());
+        .bind(station.country.clone())
+        .fetch_one(&self.pool.clone())
+        .await?;
 
-        let pool = self.pool.clone();
-
-        Box::pin(async move {
-            let row = query.fetch_one(&pool).await?;
-
-            Ok(row.get("id"))
-        })
+        Ok(row.get("id"))
     }
 
-    fn search(&self, _filter: &StationsFilter) -> BoxFuture<anyhow::Result<Vec<Station>>> {
-        let query = sqlx::query(
+    async fn search(&self, _filter: &StationsFilter) -> anyhow::Result<Vec<Station>> {
+        let mut rows = sqlx::query(
             r#"SELECT
                 id,
                 provider,
@@ -94,35 +88,30 @@ impl Storage for Sqlite {
                 tags,
                 country
             FROM radio_stations"#,
-        );
+        )
+        .fetch(&self.pool.clone());
 
-        let pool = self.pool.clone();
+        let mut result = vec![];
 
-        Box::pin(async move {
-            let mut rows = query.fetch(&pool);
+        while let Some(row) = rows.try_next().await? {
+            result.push(Station {
+                id: row.try_get("id")?,
+                provider: row.try_get("provider")?,
+                provider_id: row.try_get("provider_id")?,
+                name: row.try_get("name")?,
+                url: row.try_get("url")?,
+                codec: row.try_get("codec")?,
+                bitrate: row.try_get("bitrate")?,
+                tags: row.try_get::<'_, String, _>("tags")?.into(),
+                country: row.try_get("country")?,
+            });
+        }
 
-            let mut result = vec![];
-
-            while let Some(row) = rows.try_next().await? {
-                result.push(Station {
-                    id: row.try_get("id")?,
-                    provider: row.try_get("provider")?,
-                    provider_id: row.try_get("provider_id")?,
-                    name: row.try_get("name")?,
-                    url: row.try_get("url")?,
-                    codec: row.try_get("codec")?,
-                    bitrate: row.try_get("bitrate")?,
-                    tags: row.try_get::<'_, String, _>("tags")?.into(),
-                    country: row.try_get("country")?,
-                });
-            }
-
-            Ok(result)
-        })
+        Ok(result)
     }
 
-    fn update(&self, station: &Station) -> BoxFuture<anyhow::Result<()>> {
-        let query = sqlx::query(
+    async fn update(&self, station: &Station) -> anyhow::Result<()> {
+        sqlx::query(
             r#"UPDATE radio_stations SET
                 updated_at = ?1,
                 provider = ?2,
@@ -144,27 +133,20 @@ impl Storage for Sqlite {
         .bind(station.bitrate)
         .bind(station.tags.to_string())
         .bind(station.country.to_string())
-        .bind(station.id);
+        .bind(station.id)
+        .execute(&self.pool.clone())
+        .await?;
 
-        let pool = self.pool.clone();
-
-        Box::pin(async move {
-            query.execute(&pool).await?;
-
-            Ok(())
-        })
+        Ok(())
     }
 
-    fn delete(&self, station_id: i64) -> BoxFuture<anyhow::Result<()>> {
-        let query =
-            sqlx::query("DELETE FROM radio_stations WHERE id = ?1").bind(station_id.to_string());
-        let pool = self.pool.clone();
+    async fn delete(&self, station_id: i64) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM radio_stations WHERE id = ?1")
+            .bind(station_id.to_string())
+            .execute(&self.pool.clone())
+            .await?;
 
-        Box::pin(async move {
-            query.execute(&pool).await?;
-
-            Ok(())
-        })
+        Ok(())
     }
 }
 

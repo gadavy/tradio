@@ -1,3 +1,6 @@
+#![allow(incomplete_features)]
+#![feature(async_fn_in_trait)]
+
 use anyhow::Context;
 use clap::Parser;
 use log::LevelFilter;
@@ -63,9 +66,7 @@ async fn main() -> anyhow::Result<()> {
 
     let player = player::Rodio::default()?;
     let storage = storage::Sqlite::new(&opt.db_filepath()).await?;
+    let client = api::RadioBrowser::new();
 
-    ui::Ui::new(player, storage)
-        .with_client(Box::new(api::RadioBrowser::new()))
-        .start()
-        .await
+    ui::Ui::new(player, storage, client).start().await
 }

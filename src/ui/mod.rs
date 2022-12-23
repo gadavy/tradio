@@ -29,27 +29,29 @@ pub enum ActiveLayout {
     Devices,
 }
 
-pub struct Ui<'a, P, S>
+pub struct Ui<'a, P, S, C>
 where
     P: Player,
     S: Storage + Clone,
+    C: Client,
 {
     player: P,
 
     active_layout: ActiveLayout,
 
-    library: Library<'a, S>,
+    library: Library<'a, S, C>,
     devices: Table<'a, Device>,
     playbar: Playbar,
 }
 
-impl<'a, P, S> Ui<'a, P, S>
+impl<'a, P, S, C> Ui<'a, P, S, C>
 where
     P: Player,
     S: Storage + Clone,
+    C: Client,
 {
-    pub fn new(player: P, storage: S) -> Self {
-        let library = Library::new(storage);
+    pub fn new(player: P, storage: S, client: C) -> Self {
+        let library = Library::new(storage, client);
 
         let devices = Table::<Device>::new(
             vec![],
@@ -92,12 +94,6 @@ where
             devices,
             playbar,
         }
-    }
-
-    pub fn with_client(mut self, client: Box<dyn Client>) -> Self {
-        self.library.with_client(client);
-
-        self
     }
 
     pub async fn start(&mut self) -> anyhow::Result<()> {
