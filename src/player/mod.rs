@@ -3,8 +3,8 @@ pub use self::rodio::Rodio;
 mod rodio;
 
 pub trait Player: Send + Sync {
-    /// Starts playing given track.
-    fn play(&self, track_url: &str) -> anyhow::Result<()>;
+    /// Starts playing given stream.
+    fn play(&self, stream_url: &str) -> anyhow::Result<()>;
 
     /// Waits until current track ended.
     fn wait_end(&self);
@@ -18,7 +18,7 @@ pub trait Player: Send + Sync {
     /// Resumes playback of a paused track. No effect if not paused.
     fn resume(&self);
 
-    /// Gets if a player is paused
+    /// Gets if a player is paused.
     fn is_paused(&self) -> bool;
 
     /// Current volume in percentage [0 - 100].
@@ -27,22 +27,22 @@ pub trait Player: Send + Sync {
     /// Set volume in percentage [0 - 100].
     fn set_volume(&self, volume: i8);
 
-    /// Returns all `Device`s currently available to the system
+    /// Returns all [Device]s currently available to the system
     /// that support one or more output stream formats.
     fn devices(&self) -> anyhow::Result<Vec<Device>>;
 
-    /// Starts using the given output device for playing tracks.
+    /// Starts using the given output [Device] for playing tracks.
     fn use_device(&self, device: &Device) -> anyhow::Result<()>;
 
-    /// Return active device if exists.
+    /// Return active [Device] if exists.
     fn active_device(&self) -> Option<Device>;
 }
 
 #[derive(Debug, Clone)]
 pub struct Device {
-    pub(self) id: String,
-    pub(self) is_active: bool,
-    pub(self) is_default: bool,
+    id: String,
+    is_active: bool,
+    is_default: bool,
 }
 
 impl Device {

@@ -1,3 +1,6 @@
+#![warn(clippy::all, clippy::correctness)]
+#![warn(clippy::nursery)]
+#![warn(clippy::pedantic)]
 #![allow(incomplete_features)]
 #![feature(async_fn_in_trait)]
 
