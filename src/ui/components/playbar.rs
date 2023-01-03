@@ -50,11 +50,9 @@ impl Playbar {
     }
 
     fn get_text(&self) -> Vec<Spans> {
-        if let Some(ref station) = self.station {
+        self.station.as_ref().map_or_else(Vec::new, |station| {
             vec![Spans::from(format!("Station: {}", station.trim()))]
-        } else {
-            vec![]
-        }
+        })
     }
 
     fn device_name<P: Player>(player: &P) -> String {

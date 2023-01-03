@@ -34,7 +34,7 @@ impl Sqlite {
 impl Storage for Sqlite {
     async fn create(&self, station: &Station) -> anyhow::Result<i64> {
         let now = DateTime::<Utc>::from(SystemTime::now());
-        let row = sqlx::query(
+        let id = sqlx::query(
             r#"INSERT INTO radio_stations (
             created_at,
             updated_at,
@@ -70,9 +70,10 @@ impl Storage for Sqlite {
         .bind(station.tags.to_string())
         .bind(station.country.clone())
         .fetch_one(&self.pool.clone())
-        .await?;
+        .await?
+        .get("id");
 
-        Ok(row.get("id"))
+        Ok(id)
     }
 
     async fn search(&self, _filter: &StationsFilter) -> anyhow::Result<Vec<Station>> {
@@ -220,14 +221,14 @@ mod tests {
 
         Station {
             id,
-            provider: format!("provider_{}", id),
-            provider_id: format!("provider_id_{}", id),
-            name: format!("name_{}_{}", now_secs, id),
-            url: format!("url_{}_{}", now_secs, id),
-            codec: format!("codec_{}_{}", now_secs, id),
+            provider: format!("provider_{id}"),
+            provider_id: format!("provider_id_{id}"),
+            name: format!("name_{now_secs}_{id}"),
+            url: format!("url_{now_secs}_{id}"),
+            codec: format!("codec_{now_secs}_{id}"),
             bitrate: id.try_into().expect("unexpected u32 overflow"),
             tags: "a,b,c,d,e,f".into(),
-            country: format!("country_{}_{}", now_secs, id),
+            country: format!("country_{now_secs}_{id}"),
         }
     }
 }

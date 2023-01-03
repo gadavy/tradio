@@ -125,6 +125,7 @@ impl Player for Rodio {
         self.sink.is_paused()
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn volume(&self) -> i8 {
         (self.sink.volume() * 100.0).round() as i8
     }

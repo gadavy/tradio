@@ -36,12 +36,12 @@ impl RadioBrowser {
 
         if let Some(limit) = filter.limit {
             url.query_pairs_mut()
-                .append_pair("limit", &limit.to_string().as_str());
+                .append_pair("limit", limit.to_string().as_str());
         }
 
         if let Some(offset) = filter.offset {
             url.query_pairs_mut()
-                .append_pair("offset", &offset.to_string().as_str());
+                .append_pair("offset", offset.to_string().as_str());
         }
 
         if let Some(order_by) = filter.order_by.as_ref() {
