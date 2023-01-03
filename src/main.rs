@@ -1,5 +1,4 @@
 #![warn(clippy::all, clippy::correctness)]
-#![warn(clippy::nursery)]
 #![warn(clippy::pedantic)]
 #![allow(incomplete_features)]
 #![feature(async_fn_in_trait)]
@@ -62,7 +61,7 @@ impl Opt {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let log_file = fs::File::create(&opt.log_filepath()).context("can't open log file")?;
+    let log_file = fs::File::create(opt.log_filepath()).context("can't open log file")?;
 
     simplelog::WriteLogger::init(opt.log_level, simplelog::Config::default(), log_file)
         .context("init logger")?;

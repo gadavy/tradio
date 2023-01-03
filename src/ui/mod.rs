@@ -112,10 +112,7 @@ where
 
             tokio::select! {
                 event = reader.next().fuse() => {
-                    let key_event = match event {
-                        Some(Ok(Event::Key(key_event))) => key_event,
-                        _ => continue
-                    };
+                    let Some(Ok(Event::Key(key_event))) = event else { continue };
 
                     match self.handle_key(key_event).await {
                         Ok(false) => break,
@@ -259,7 +256,7 @@ fn setup_terminal() -> anyhow::Result<()> {
 
     std::panic::set_hook(Box::new(|info| {
         shutdown_terminal().expect("can't graceful shutdown terminal");
-        eprintln!("{:?}", info);
+        eprintln!("{info:?}");
     }));
 
     Ok(())

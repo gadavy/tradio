@@ -95,15 +95,8 @@ impl Iterator for Symphonia {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset == self.buffer.len() {
-            let packet = match self.reader.next_packet() {
-                Ok(packet) => packet,
-                Err(_) => return None,
-            };
-
-            let decoded = match self.decoder.decode(&packet) {
-                Ok(buffer) => buffer,
-                Err(_) => return None,
-            };
+            let Ok(packet) = self.reader.next_packet() else { return None };
+            let Ok(decoded) = self.decoder.decode(&packet) else { return None };
 
             let mut buffer = SampleBuffer::new(decoded.capacity() as u64, *decoded.spec());
             buffer.copy_interleaved_ref(decoded);

@@ -70,11 +70,9 @@ impl<'a, T> Table<'a, T> {
     }
 
     pub fn get_selected(&self) -> Option<&T> {
-        if let Some(ref state) = self.state {
-            Some(&self.list[state.selected().unwrap_or(0)])
-        } else {
-            None
-        }
+        self.state
+            .as_ref()
+            .map(|state| &self.list[state.selected().unwrap_or(0)])
     }
 
     pub fn get_state(&self) -> Option<TableState> {
