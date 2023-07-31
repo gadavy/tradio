@@ -202,7 +202,7 @@ impl fmt::Debug for Rodio {
         f.debug_struct("RodioPlayer")
             .field("controls", &self.controls)
             .field("active_out", &self.active_out)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

@@ -17,11 +17,10 @@ pub struct Sqlite {
 
 impl Sqlite {
     pub async fn new(url: &str) -> anyhow::Result<Sqlite> {
-        let mut opts = SqliteConnectOptions::from_str(url)?
+        let opts = SqliteConnectOptions::from_str(url)?
             .create_if_missing(true)
-            .auto_vacuum(SqliteAutoVacuum::Full);
-
-        opts.log_statements(log::LevelFilter::Trace);
+            .auto_vacuum(SqliteAutoVacuum::Full)
+            .log_statements(log::LevelFilter::Trace);
 
         let pool = SqlitePool::connect_with(opts).await?;
 

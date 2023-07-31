@@ -6,7 +6,11 @@ license = "MIT"
 repository = "https://github.com/gadavy/tradio"
 homepage = "https://github.com/gadavy/tradio"
 keywords = ["terminal", "tui", "music", "radio"]
-categories = ["command-line-interface", "command-line-utilities", "multimedia::audio"]
+categories = [
+    "command-line-interface",
+    "command-line-utilities",
+    "multimedia::audio",
+]
 
 [[bin]]
 name = "tradio"
@@ -14,20 +18,24 @@ path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "4.3.19", features = ["derive"] }
 anyhow = "1.0"
-tokio = { version = "1.21", features = ["full"] }
-symphonia = { version = "0.5", features = ["mp3", "aac"] }
-rodio = { version = "0.16", default-features = false }
+tokio = { version = "1.29.1", features = ["full"] }
+symphonia = { version = "0.5.3", features = ["mp3", "aac"] }
+rodio = { version = "0.17.1", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-reqwest = { version = "0.11", features = ["blocking", "json", "gzip"] }
-futures = "0.3"
-sqlx = { version = "0.6", features = ["sqlite", "runtime-tokio-native-tls", "chrono"] }
-dirs = "4.0"
+reqwest = { version = "0.11.18", features = ["blocking", "json", "gzip"] }
+futures = "0.3.28"
+sqlx = { version = "0.7.1", features = [
+    "sqlite",
+    "runtime-tokio-native-tls",
+    "chrono",
+] }
+dirs = "5.0.1"
 
 # ui utils.
-crossterm = { version = "0.25", features = ["event-stream"] }
+crossterm = { version = "0.26.1", features = ["event-stream"] }
 tui = { version = "0.19", features = ["crossterm"], default-features = false }
 
 # TODO: remove.
